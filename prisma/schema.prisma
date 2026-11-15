@@ -1,0 +1,2474 @@
+// =============================================================================
+// MedCRM — Phase 1 schema: platform, tenants, branches, users, RBAC, audit.
+//
+// Isolation model (see docs/ARCHITECTURE.md):
+//   * Every tenant-owned table has a NOT NULL "tenantId" column + index.
+//   * PostgreSQL Row Level Security policies (migration 0002_rls) restrict
+//     every row to current_setting('app.tenant_id').
+//   * The web app connects as role `crm_app` (NOBYPASSRLS) for tenant work,
+//     and as `crm_platform` (BYPASSRLS) only for super-admin + login lookup.
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------- enums ----
+
+enum TenantType {
+  MEDICAL_CLINIC
+  BEAUTY_LASER_CENTER
+  DENTAL_CENTER
+  DERMATOLOGY_CENTER
+  HOSPITAL
+  MEDICAL_SERVICES_COMPANY
+  CLINIC_MANAGEMENT_COMPANY
+  MULTI_BRANCH_ORG
+}
+
+enum TenantStatus {
+  TRIAL
+  ACTIVE
+  SUSPENDED
+  CANCELLED
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  PAUSED
+  CANCELLED
+  EXPIRED
+}
+
+enum BillingCycle {
+  MONTHLY
+  YEARLY
+}
+
+enum UserStatus {
+  ACTIVE
+  INVITED
+  DISABLED
+}
+
+// ------------------------------------------------------ platform tables ----
+// Not tenant-owned. Only reachable through the crm_platform role.
+
+model Plan {
+  id           String   @id @default(uuid()) @db.Uuid
+  code         String   @unique
+  nameAr       String
+  nameEn       String
+  description  String?
+  priceMonthly Decimal  @default(0) @db.Decimal(12, 2)
+  priceYearly  Decimal  @default(0) @db.Decimal(12, 2)
+  currency     String   @default("USD") @db.VarChar(3)
+  trialDays    Int      @default(14)
+  maxUsers     Int      @default(5)
+  maxBranches  Int      @default(1)
+  storageMb    Int      @default(1024)
+  /// Module keys enabled by this plan (see src/lib/permissions.ts MODULES)
+  features     String[]
+  isActive     Boolean  @default(true)
+  /// listed on the public pricing / signup page
+  isPublic     Boolean  @default(true)
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  subscriptions TenantSubscription[]
+  invoices      PlatformInvoice[]
+}
+
+// -------------------------------------------------------------- tenants ----
+
+model Tenant {
+  id            String       @id @default(uuid()) @db.Uuid
+  name          String
+  slug          String       @unique
+  type          TenantType
+  status        TenantStatus @default(TRIAL)
+  logoUrl       String?
+  primaryColor  String       @default("#0f766e")
+  baseCurrency  String       @default("USD") @db.VarChar(3)
+  timezone      String       @default("Asia/Baghdad")
+  defaultLocale String       @default("ar")
+  contactEmail  String?
+  contactPhone  String?
+  address       String?
+  storageUsedMb Int          @default(0)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  subscriptions    TenantSubscription[]
+  platformInvoices PlatformInvoice[]
+  branches         Branch[]
+  roles            Role[]
+  users            User[]
+  auditLogs        AuditLog[]
+
+  @@index([status])
+}
+
+/// Per-tenant sequential numbers (client codes, later invoice numbers).
+model TenantCounter {
+  tenantId String @db.Uuid
+  key      String
+  value    Int    @default(0)
+
+  @@id([tenantId, key])
+}
+
+model TenantSubscription {
+  id                String             @id @default(uuid()) @db.Uuid
+  tenantId          String             @db.Uuid
+  planId            String             @db.Uuid
+  status            SubscriptionStatus @default(TRIALING)
+  billingCycle      BillingCycle       @default(MONTHLY)
+  startsAt          DateTime           @default(now())
+  endsAt            DateTime?
+  trialEndsAt       DateTime?
+  cancelledAt       DateTime?
+  /// Phase 7: renewal & lifecycle
+  autoRenew         Boolean            @default(true)
+  cancelAtPeriodEnd Boolean            @default(false)
+  pausedAt          DateTime?
+  pastDueSince      DateTime?
+  couponId          String?            @db.Uuid
+  couponCyclesUsed  Int                @default(0)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan     Plan              @relation(fields: [planId], references: [id])
+  coupon   PlatformCoupon?   @relation(fields: [couponId], references: [id], onDelete: SetNull)
+  invoices PlatformInvoice[]
+
+  @@index([tenantId, status])
+}
+
+// ------------------------------------------------------- tenant-owned ----
+
+model Branch {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @db.Uuid
+  name      String
+  code      String
+  phone     String?
+  address   String?
+  isMain    Boolean  @default(false)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant        Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userAccess    UserBranch[]
+  clients       Client[]
+  rooms         Room[]
+  appointments  Appointment[]
+  prices        ServiceBranchPrice[]
+  warehouses    Warehouse[]
+  waitlist      WaitlistEntry[]
+  programs      ClientProgram[]
+  subscriptions ClientSubscription[]
+  surgeries     Surgery[]
+  reviews       MedicalReview[]
+  invoices      Invoice[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+}
+
+model Role {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid
+  key         String
+  name        String
+  nameAr      String
+  description String?
+  /// System roles are created on tenant provisioning and cannot be deleted
+  isSystem    Boolean  @default(false)
+  /// Permission keys like "clients.view" (see src/lib/permissions.ts)
+  permissions String[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  users  User[]
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
+}
+
+model User {
+  id              String     @id @default(uuid()) @db.Uuid
+  /// NULL only for platform owners (isPlatformAdmin = true)
+  tenantId        String?    @db.Uuid
+  /// Stored lower-cased; globally unique so login needs only email+password
+  email           String     @unique
+  passwordHash    String
+  fullName        String
+  phone           String?
+  jobTitle        String?
+  isPlatformAdmin Boolean    @default(false)
+  status          UserStatus @default(ACTIVE)
+  roleId          String?    @db.Uuid
+  /// true = may see every branch of the tenant
+  allBranches     Boolean    @default(false)
+  locale          String     @default("ar")
+  /// Bumped on password change / disable to invalidate existing sessions
+  sessionVersion  Int        @default(1)
+  failedLogins    Int        @default(0)
+  lockedUntil     DateTime?
+  /// Phase 7: TOTP two-factor authentication (secret AES-GCM encrypted, recovery codes SHA-256 hashed)
+  totpSecretEnc   String?
+  totpEnabledAt   DateTime?
+  recoveryCodes   String[]
+  lastLoginAt     DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  tenant       Tenant?      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  role         Role?        @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  branchAccess UserBranch[]
+
+  ownedClients   Client[]             @relation("ClientOwner")
+  interactions   ClientInteraction[]
+  medicalEntries MedicalEntry[]
+  qualified      ServiceStaff[]
+  appointments   Appointment[]        @relation("AppointmentStaff")
+  waitlist       WaitlistEntry[]
+  programs       ClientProgram[]      @relation("ProgramDoctor")
+  surgeries      Surgery[]            @relation("Surgeon")
+  surgeryTeams   SurgeryTeamMember[]
+  reviews        MedicalReview[]      @relation("ReviewDoctor")
+  salesInvoices  Invoice[]            @relation("InvoiceSeller")
+  performedLines InvoiceLine[]        @relation("LinePerformer")
+  commissions    CommissionEntry[]
+  employee       EmployeeProfile?
+  shifts         WorkShift[]
+  attendance     AttendanceRecord[]
+  leaves         LeaveRequest[]
+  advances       SalaryAdvance[]
+  payrollItems   PayrollItem[]
+  evaluations    EmployeeEvaluation[]
+  notifications  Notification[]
+
+  @@index([tenantId])
+  @@index([roleId])
+}
+
+model UserBranch {
+  tenantId String @db.Uuid
+  userId   String @db.Uuid
+  branchId String @db.Uuid
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@id([userId, branchId])
+  @@index([tenantId])
+  @@index([branchId])
+}
+
+model AuditLog {
+  id        BigInt   @id @default(autoincrement())
+  /// NULL = platform-level event (only visible to platform role)
+  tenantId  String?  @db.Uuid
+  userId    String?  @db.Uuid
+  userEmail String?
+  action    String
+  entity    String
+  entityId  String?
+  before    Json?
+  after     Json?
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@index([entity, entityId])
+}
+
+// =============================================================== PHASE 2 ====
+// Clients (CRM), medical records, files, service catalog, rooms, appointments.
+// Every table is tenant-owned and protected by RLS (migration 0003_phase2).
+
+enum ClientStatus {
+  LEAD
+  ACTIVE
+  INACTIVE
+  BLOCKED
+}
+
+enum Gender {
+  MALE
+  FEMALE
+}
+
+enum InteractionType {
+  NOTE
+  CALL
+  WHATSAPP
+  EMAIL
+  VISIT
+  SYSTEM
+}
+
+model Client {
+  id              String       @id @default(uuid()) @db.Uuid
+  tenantId        String       @db.Uuid
+  /// Human-friendly sequential code per tenant, e.g. C-000123
+  code            String
+  fullName        String
+  phone           String
+  /// Digits only; unique per tenant among non-deleted clients (partial index in SQL)
+  phoneNormalized String
+  email           String?
+  gender          Gender?
+  birthDate       DateTime?    @db.Date
+  address         String?
+  /// Acquisition source key: instagram, tiktok, referral, walk_in, google, influencer, ...
+  source          String?
+  sourceDetail    String?
+  status          ClientStatus @default(ACTIVE)
+  /// Classification, e.g. VIP / REGULAR / CORPORATE
+  category        String?
+  tags            String[]
+  notes           String?
+  branchId        String       @db.Uuid
+  ownerId         String?      @db.Uuid
+  photoFileId     String?      @db.Uuid
+  lastVisitAt     DateTime?
+  convertedAt     DateTime?
+  /// Phase 6: referral & campaign attribution, marketing consent
+  influencerId    String?      @db.Uuid
+  campaignId      String?      @db.Uuid
+  marketingOptOut Boolean      @default(false)
+  deletedAt       DateTime?
+  createdById     String?      @db.Uuid
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  branch         Branch               @relation(fields: [branchId], references: [id])
+  owner          User?                @relation("ClientOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  interactions   ClientInteraction[]
+  medicalRecord  MedicalRecord?
+  medicalEntries MedicalEntry[]
+  files          FileObject[]
+  appointments   Appointment[]
+  waitlist       WaitlistEntry[]
+  programs       ClientProgram[]
+  subscriptions  ClientSubscription[]
+  surgeries      Surgery[]
+  reviews        MedicalReview[]
+  invoices       Invoice[]
+  loyalty        LoyaltyTransaction[]
+  corporate      CorporateMember[]
+  messages       Message[]
+  influencer     Influencer?          @relation("ClientInfluencer", fields: [influencerId], references: [id], onDelete: SetNull)
+  campaign       Campaign?            @relation("ClientCampaign", fields: [campaignId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, code])
+  @@index([tenantId, status])
+  @@index([tenantId, branchId])
+  @@index([tenantId, phoneNormalized])
+  @@index([tenantId, createdAt])
+}
+
+model ClientInteraction {
+  id        String          @id @default(uuid()) @db.Uuid
+  tenantId  String          @db.Uuid
+  clientId  String          @db.Uuid
+  type      InteractionType
+  content   String
+  userId    String?         @db.Uuid
+  createdAt DateTime        @default(now())
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user   User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, clientId, createdAt(sort: Desc)])
+}
+
+/// One medical profile per client. Readable only with medical.view_data.
+model MedicalRecord {
+  clientId           String   @id @db.Uuid
+  tenantId           String   @db.Uuid
+  bloodType          String?
+  allergies          String?
+  currentMedications String?
+  chronicConditions  String?
+  pastSurgeries      String?
+  medicalHistory     String?
+  familyHistory      String?
+  notes              String?
+  updatedById        String?  @db.Uuid
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+enum MedicalEntryType {
+  DIAGNOSIS
+  NOTE
+  TREATMENT_PLAN
+  FOLLOW_UP_RESULT
+}
+
+model MedicalEntry {
+  id            String           @id @default(uuid()) @db.Uuid
+  tenantId      String           @db.Uuid
+  clientId      String           @db.Uuid
+  type          MedicalEntryType
+  title         String
+  content       String
+  appointmentId String?          @db.Uuid
+  authorId      String?          @db.Uuid
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  author User?  @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, clientId, createdAt(sort: Desc)])
+}
+
+enum FileCategory {
+  CLIENT_PHOTO
+  MEDICAL_BEFORE
+  MEDICAL_AFTER
+  MEDICAL_DOCUMENT
+}
+
+/// Uploaded files. Bytes live in private storage (src/server/storage.ts),
+/// never in a public folder; downloads go through a permission-checked route.
+model FileObject {
+  id           String       @id @default(uuid()) @db.Uuid
+  tenantId     String       @db.Uuid
+  clientId     String?      @db.Uuid
+  category     FileCategory
+  originalName String
+  mimeType     String
+  sizeBytes    Int
+  storageKey   String
+  note         String?
+  uploadedById String?      @db.Uuid
+  /// Phase 3: optional link to a surgery or a medical review
+  surgeryId    String?      @db.Uuid
+  reviewId     String?      @db.Uuid
+  createdAt    DateTime     @default(now())
+
+  client  Client?        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  surgery Surgery?       @relation(fields: [surgeryId], references: [id], onDelete: SetNull)
+  review  MedicalReview? @relation(fields: [reviewId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, clientId])
+  @@index([surgeryId])
+}
+
+enum ServiceKind {
+  CONSULTATION
+  MEDICAL
+  COSMETIC
+  LASER
+  DENTAL
+  SURGERY
+  FOLLOW_UP
+  OTHER
+}
+
+enum CommissionType {
+  NONE
+  PERCENT
+  FIXED
+}
+
+/// Multi-level service tree (group → category → sub-category ...).
+model ServiceCategory {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @db.Uuid
+  parentId  String?  @db.Uuid
+  name      String
+  nameEn    String?
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  parent   ServiceCategory?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children ServiceCategory[] @relation("CategoryTree")
+  services Service[]
+
+  @@index([tenantId, parentId])
+}
+
+model Service {
+  id                       String         @id @default(uuid()) @db.Uuid
+  tenantId                 String         @db.Uuid
+  categoryId               String?        @db.Uuid
+  code                     String?
+  name                     String
+  nameEn                   String?
+  description              String?
+  kind                     ServiceKind    @default(OTHER)
+  price                    Decimal        @default(0) @db.Decimal(12, 2)
+  cost                     Decimal        @default(0) @db.Decimal(12, 2)
+  durationMin              Int            @default(30)
+  execCommissionType       CommissionType @default(NONE)
+  execCommissionValue      Decimal        @default(0) @db.Decimal(12, 2)
+  marketingCommissionType  CommissionType @default(NONE)
+  marketingCommissionValue Decimal        @default(0) @db.Decimal(12, 2)
+  color                    String?
+  isActive                 Boolean        @default(true)
+  createdAt                DateTime       @default(now())
+  updatedAt                DateTime       @updatedAt
+
+  category      ServiceCategory?          @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  staff         ServiceStaff[]
+  branchPrices  ServiceBranchPrice[]
+  appointments  Appointment[]
+  waitlist      WaitlistEntry[]
+  templateItems ProgramTemplateItem[]
+  programItems  ClientProgramItem[]
+  planServices  SubscriptionPlanService[]
+  surgeries     Surgery[]
+  invoiceLines  InvoiceLine[]
+  materials     ServiceMaterial[]
+
+  @@index([tenantId, categoryId])
+  @@index([tenantId, isActive])
+}
+
+/// Staff qualified to perform a service (empty = anyone).
+model ServiceStaff {
+  tenantId  String @db.Uuid
+  serviceId String @db.Uuid
+  userId    String @db.Uuid
+
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([serviceId, userId])
+  @@index([tenantId])
+}
+
+/// Branch-specific price override.
+model ServiceBranchPrice {
+  tenantId  String  @db.Uuid
+  serviceId String  @db.Uuid
+  branchId  String  @db.Uuid
+  price     Decimal @db.Decimal(12, 2)
+
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  branch  Branch  @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@id([serviceId, branchId])
+  @@index([tenantId])
+}
+
+model Room {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @db.Uuid
+  branchId  String   @db.Uuid
+  name      String
+  /// TREATMENT | LASER | CONSULTATION | OPERATING | DENTAL
+  kind      String   @default("TREATMENT")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  branch       Branch        @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+  surgeries    Surgery[]
+
+  @@index([tenantId, branchId])
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  CONFIRMED
+  CHECKED_IN
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+/// Overlaps for the same staff member or room are rejected by PostgreSQL
+/// exclusion constraints (see 0003_phase2), not just by application code.
+model Appointment {
+  id                String            @id @default(uuid()) @db.Uuid
+  tenantId          String            @db.Uuid
+  branchId          String            @db.Uuid
+  clientId          String            @db.Uuid
+  serviceId         String?           @db.Uuid
+  staffId           String?           @db.Uuid
+  roomId            String?           @db.Uuid
+  startsAt          DateTime
+  endsAt            DateTime
+  status            AppointmentStatus @default(SCHEDULED)
+  /// Price snapshot at booking time (branch price or service price)
+  price             Decimal?          @db.Decimal(12, 2)
+  notes             String?
+  cancelReason      String?
+  /// phone | walk_in | whatsapp | online | instagram ...
+  bookingSource     String?
+  recurrenceGroupId String?           @db.Uuid
+  confirmedAt       DateTime?
+  checkedInAt       DateTime?
+  completedAt       DateTime?
+  cancelledAt       DateTime?
+  createdById       String?           @db.Uuid
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  /// Phase 3: session of a treatment program / visit of a client subscription
+  programItemId  String? @db.Uuid
+  subscriptionId String? @db.Uuid
+
+  branch  Branch   @relation(fields: [branchId], references: [id])
+  client  Client   @relation(fields: [clientId], references: [id])
+  service Service? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  staff   User?    @relation("AppointmentStaff", fields: [staffId], references: [id], onDelete: SetNull)
+  room    Room?    @relation(fields: [roomId], references: [id], onDelete: SetNull)
+
+  programItem    ClientProgramItem?  @relation(fields: [programItemId], references: [id], onDelete: SetNull)
+  subscription   ClientSubscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  programSession ProgramSession?
+  usage          SubscriptionUsage?
+  surgery        Surgery?
+  review         MedicalReview?
+
+  @@index([tenantId, startsAt])
+  @@index([tenantId, staffId, startsAt])
+  @@index([tenantId, roomId, startsAt])
+  @@index([tenantId, clientId, startsAt])
+  @@index([tenantId, status, startsAt])
+  @@index([programItemId])
+  @@index([subscriptionId])
+}
+
+enum WaitlistStatus {
+  WAITING
+  BOOKED
+  REMOVED
+}
+
+model WaitlistEntry {
+  id            String         @id @default(uuid()) @db.Uuid
+  tenantId      String         @db.Uuid
+  branchId      String         @db.Uuid
+  clientId      String         @db.Uuid
+  serviceId     String?        @db.Uuid
+  staffId       String?        @db.Uuid
+  preferredDate DateTime?      @db.Date
+  preferredTime String?
+  notes         String?
+  status        WaitlistStatus @default(WAITING)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  branch  Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  client  Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  service Service? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  staff   User?    @relation(fields: [staffId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, status])
+}
+
+// =============================================================== PHASE 3 ====
+// Treatment programs, client subscriptions, surgeries, medical reviews.
+
+enum ProgramStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  CANCELLED
+  EXPIRED
+}
+
+/// Reusable program definition (e.g. "Laser full body — 6 sessions").
+model ProgramTemplate {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @db.Uuid
+  name         String
+  nameEn       String?
+  description  String?
+  price        Decimal  @default(0) @db.Decimal(12, 2)
+  /// Program must be finished within N days of start (null = open-ended)
+  validityDays Int?
+  /// Recommended gap between sessions
+  intervalDays Int?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  items    ProgramTemplateItem[]
+  programs ClientProgram[]
+
+  @@index([tenantId])
+}
+
+model ProgramTemplateItem {
+  id         String @id @default(uuid()) @db.Uuid
+  tenantId   String @db.Uuid
+  templateId String @db.Uuid
+  serviceId  String @db.Uuid
+  sessions   Int
+
+  template ProgramTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  service  Service         @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, templateId])
+}
+
+/// A program sold/assigned to one client. Items & price are snapshots.
+model ClientProgram {
+  id            String        @id @default(uuid()) @db.Uuid
+  tenantId      String        @db.Uuid
+  code          String
+  clientId      String        @db.Uuid
+  branchId      String        @db.Uuid
+  templateId    String?       @db.Uuid
+  doctorId      String?       @db.Uuid
+  name          String
+  price         Decimal       @default(0) @db.Decimal(12, 2)
+  status        ProgramStatus @default(ACTIVE)
+  startDate     DateTime      @db.Date
+  endDate       DateTime?     @db.Date
+  intervalDays  Int?
+  notes         String?
+  /// Overall treatment outcome (clinical)
+  results       String?
+  renewedFromId String?       @db.Uuid
+  pausedAt      DateTime?
+  completedAt   DateTime?
+  cancelledAt   DateTime?
+  cancelReason  String?
+  createdById   String?       @db.Uuid
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  client   Client              @relation(fields: [clientId], references: [id])
+  branch   Branch              @relation(fields: [branchId], references: [id])
+  template ProgramTemplate?    @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  doctor   User?               @relation("ProgramDoctor", fields: [doctorId], references: [id], onDelete: SetNull)
+  items    ClientProgramItem[]
+  sessions ProgramSession[]
+  reviews  MedicalReview[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, status])
+  @@index([tenantId, clientId])
+}
+
+model ClientProgramItem {
+  id              String @id @default(uuid()) @db.Uuid
+  tenantId        String @db.Uuid
+  clientProgramId String @db.Uuid
+  serviceId       String @db.Uuid
+  sessionsTotal   Int
+
+  program      ClientProgram    @relation(fields: [clientProgramId], references: [id], onDelete: Cascade)
+  service      Service          @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  sessions     ProgramSession[]
+  appointments Appointment[]
+
+  @@index([tenantId, clientProgramId])
+}
+
+/// A performed session. Created automatically when a linked appointment is
+/// completed, or recorded manually.
+model ProgramSession {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String   @db.Uuid
+  clientProgramId String   @db.Uuid
+  itemId          String   @db.Uuid
+  appointmentId   String?  @unique @db.Uuid
+  sessionNo       Int
+  performedAt     DateTime
+  performedById   String?  @db.Uuid
+  notes           String?
+  result          String?
+  createdAt       DateTime @default(now())
+
+  program     ClientProgram     @relation(fields: [clientProgramId], references: [id], onDelete: Cascade)
+  item        ClientProgramItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  appointment Appointment?      @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, clientProgramId])
+}
+
+enum SubscriptionKind {
+  /// unlimited visits within the period
+  TIME
+  /// limited number of visits within the period
+  VISITS
+  /// limited number of treatment sessions within the period
+  SESSIONS
+}
+
+enum ClientSubscriptionStatus {
+  ACTIVE
+  FROZEN
+  CANCELLED
+  EXPIRED
+}
+
+/// Clinic's membership/package offer to ITS clients (not the SaaS plan).
+model SubscriptionPlan {
+  id            String           @id @default(uuid()) @db.Uuid
+  tenantId      String           @db.Uuid
+  name          String
+  nameEn        String?
+  description   String?
+  kind          SubscriptionKind
+  price         Decimal          @default(0) @db.Decimal(12, 2)
+  durationDays  Int
+  visitsLimit   Int?
+  maxFreezeDays Int              @default(0)
+  allServices   Boolean          @default(true)
+  isActive      Boolean          @default(true)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  services      SubscriptionPlanService[]
+  subscriptions ClientSubscription[]
+
+  @@index([tenantId])
+}
+
+model SubscriptionPlanService {
+  tenantId  String @db.Uuid
+  planId    String @db.Uuid
+  serviceId String @db.Uuid
+
+  plan    SubscriptionPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  service Service          @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@id([planId, serviceId])
+  @@index([tenantId])
+}
+
+/// A subscription sold to a client. Coverage & limits are snapshots of the plan.
+model ClientSubscription {
+  id                String                   @id @default(uuid()) @db.Uuid
+  tenantId          String                   @db.Uuid
+  code              String
+  clientId          String                   @db.Uuid
+  branchId          String                   @db.Uuid
+  planId            String?                  @db.Uuid
+  name              String
+  kind              SubscriptionKind
+  price             Decimal                  @default(0) @db.Decimal(12, 2)
+  startDate         DateTime                 @db.Date
+  endDate           DateTime                 @db.Date
+  visitsTotal       Int?
+  allServices       Boolean                  @default(true)
+  coveredServiceIds String[]                 @db.Uuid
+  status            ClientSubscriptionStatus @default(ACTIVE)
+  frozenAt          DateTime?
+  frozenDaysUsed    Int                      @default(0)
+  maxFreezeDays     Int                      @default(0)
+  renewedFromId     String?                  @db.Uuid
+  cancelledAt       DateTime?
+  cancelReason      String?
+  createdById       String?                  @db.Uuid
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+
+  client       Client              @relation(fields: [clientId], references: [id])
+  branch       Branch              @relation(fields: [branchId], references: [id])
+  plan         SubscriptionPlan?   @relation(fields: [planId], references: [id], onDelete: SetNull)
+  usages       SubscriptionUsage[]
+  appointments Appointment[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, status, endDate])
+  @@index([tenantId, clientId])
+}
+
+model SubscriptionUsage {
+  id             String   @id @default(uuid()) @db.Uuid
+  tenantId       String   @db.Uuid
+  subscriptionId String   @db.Uuid
+  appointmentId  String?  @unique @db.Uuid
+  serviceId      String?  @db.Uuid
+  usedAt         DateTime
+  note           String?
+  recordedById   String?  @db.Uuid
+  createdAt      DateTime @default(now())
+
+  subscription ClientSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  appointment  Appointment?       @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, subscriptionId])
+}
+
+enum SurgeryStatus {
+  PLANNED
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  POSTPONED
+  CANCELLED
+}
+
+enum RecoveryStatus {
+  NOT_STARTED
+  STABLE
+  NEEDS_ATTENTION
+  COMPLICATED
+  RECOVERED
+}
+
+/// Surgery. Its time slot is an Appointment (surgeon + operating room), so the
+/// same PostgreSQL exclusion constraints prevent double-booking.
+model Surgery {
+  id              String         @id @default(uuid()) @db.Uuid
+  tenantId        String         @db.Uuid
+  code            String
+  clientId        String         @db.Uuid
+  branchId        String         @db.Uuid
+  serviceId       String?        @db.Uuid
+  surgeryType     String
+  surgeonId       String?        @db.Uuid
+  roomId          String?        @db.Uuid
+  appointmentId   String?        @unique @db.Uuid
+  scheduledAt     DateTime
+  durationMin     Int
+  status          SurgeryStatus  @default(PLANNED)
+  price           Decimal        @default(0) @db.Decimal(12, 2)
+  anesthesiaType  String?
+  preOpNotes      String?
+  postOpNotes     String?
+  operativeReport String?
+  complications   String?
+  recoveryStatus  RecoveryStatus @default(NOT_STARTED)
+  startedAt       DateTime?
+  completedAt     DateTime?
+  cancelledAt     DateTime?
+  cancelReason    String?
+  createdById     String?        @db.Uuid
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  client      Client              @relation(fields: [clientId], references: [id])
+  branch      Branch              @relation(fields: [branchId], references: [id])
+  service     Service?            @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  surgeon     User?               @relation("Surgeon", fields: [surgeonId], references: [id], onDelete: SetNull)
+  room        Room?               @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  appointment Appointment?        @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  team        SurgeryTeamMember[]
+  supplies    SurgerySupply[]
+  reviews     MedicalReview[]
+  files       FileObject[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, scheduledAt])
+  @@index([tenantId, status])
+  @@index([tenantId, clientId])
+}
+
+model SurgeryTeamMember {
+  tenantId  String @db.Uuid
+  surgeryId String @db.Uuid
+  userId    String @db.Uuid
+  /// ASSISTANT | ANESTHETIST | NURSE | TECHNICIAN | OTHER
+  role      String
+
+  surgery Surgery @relation(fields: [surgeryId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([surgeryId, userId])
+  @@index([tenantId])
+}
+
+/// Consumables used. Free-text until the Inventory module (Phase 5) links items.
+model SurgerySupply {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @db.Uuid
+  surgeryId String   @db.Uuid
+  name      String
+  quantity  Decimal  @db.Decimal(12, 3)
+  unitCost  Decimal  @default(0) @db.Decimal(12, 2)
+  notes     String?
+  /// Phase 5: stock item to deduct when the surgery is completed
+  itemId    String?  @db.Uuid
+  consumed  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  surgery Surgery @relation(fields: [surgeryId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, surgeryId])
+}
+
+enum ReviewStatus {
+  SCHEDULED
+  COMPLETED
+  MISSED
+  CANCELLED
+}
+
+/// Medical follow-up visit (المراجعة الطبية); slot is an Appointment for the doctor.
+model MedicalReview {
+  id               String       @id @default(uuid()) @db.Uuid
+  tenantId         String       @db.Uuid
+  clientId         String       @db.Uuid
+  branchId         String       @db.Uuid
+  doctorId         String?      @db.Uuid
+  surgeryId        String?      @db.Uuid
+  clientProgramId  String?      @db.Uuid
+  previousReviewId String?      @db.Uuid
+  appointmentId    String?      @unique @db.Uuid
+  /// POST_OP | ROUTINE | COMPLAINT | TREATMENT | RESULT | OTHER
+  reasonType       String
+  reason           String
+  scheduledAt      DateTime
+  durationMin      Int          @default(20)
+  status           ReviewStatus @default(SCHEDULED)
+  diagnosis        String?
+  notes            String?
+  procedures       String?
+  /// IMPROVED | STABLE | WORSE | RESOLVED
+  outcome          String?
+  completedAt      DateTime?
+  createdById      String?      @db.Uuid
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  client      Client         @relation(fields: [clientId], references: [id])
+  branch      Branch         @relation(fields: [branchId], references: [id])
+  doctor      User?          @relation("ReviewDoctor", fields: [doctorId], references: [id], onDelete: SetNull)
+  surgery     Surgery?       @relation(fields: [surgeryId], references: [id], onDelete: SetNull)
+  program     ClientProgram? @relation(fields: [clientProgramId], references: [id], onDelete: SetNull)
+  appointment Appointment?   @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  files       FileObject[]
+
+  @@index([tenantId, status, scheduledAt])
+  @@index([tenantId, clientId])
+  @@index([surgeryId])
+}
+
+// =============================================================== PHASE 4 ====
+// Billing (invoices, payments, refunds, installments), POS products, coupons,
+// loyalty, HR (profiles, shifts, attendance, leave, advances, payroll), commissions.
+
+/// Per-tenant billing / loyalty / commission settings (1 row per tenant).
+model TenantSettings {
+  tenantId                 String   @id @db.Uuid
+  taxName                  String   @default("ضريبة المبيعات")
+  defaultTaxRate           Decimal  @default(0) @db.Decimal(5, 2)
+  invoiceDueDays           Int      @default(0)
+  invoiceFooter            String?
+  loyaltyEnabled           Boolean  @default(true)
+  /// points earned per 1 unit of currency paid (e.g. 0.001 = 1 point per 1,000 IQD)
+  pointsPerUnit            Decimal  @default(0) @db.Decimal(14, 6)
+  /// currency value of 1 point when redeemed
+  pointValue               Decimal  @default(0) @db.Decimal(14, 4)
+  minRedeemPoints          Int      @default(0)
+  /// fixed commission per completed medical review (0 = none)
+  reviewCommissionAmount   Decimal  @default(0) @db.Decimal(14, 2)
+  /// seller commission on product lines, %
+  productCommissionPercent Decimal  @default(0) @db.Decimal(5, 2)
+  /// Phase 5: deduct service materials automatically when a visit is completed
+  autoConsumeMaterials     Boolean  @default(true)
+  /// Phase 5: refuse a sale/visit completion when stock is insufficient
+  blockOnStockShortage     Boolean  @default(false)
+  updatedAt                DateTime @updatedAt
+}
+
+/// Retail products sold at the POS. Stock movements arrive with Inventory (Phase 5).
+model Product {
+  id             String   @id @default(uuid()) @db.Uuid
+  tenantId       String   @db.Uuid
+  name           String
+  nameEn         String?
+  sku            String?
+  barcode        String?
+  unit           String   @default("قطعة")
+  price          Decimal  @default(0) @db.Decimal(14, 2)
+  cost           Decimal  @default(0) @db.Decimal(14, 2)
+  taxRate        Decimal? @db.Decimal(5, 2)
+  isActive       Boolean  @default(true)
+  /// Phase 5: one catalog for retail products AND clinic materials/consumables
+  trackStock     Boolean  @default(false)
+  isSellable     Boolean  @default(true)
+  isConsumable   Boolean  @default(false)
+  expiryTracking Boolean  @default(false)
+  minStock       Decimal  @default(0) @db.Decimal(14, 3)
+  groupId        String?  @db.Uuid
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  lines     InvoiceLine[]
+  group     ItemGroup?        @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  materials ServiceMaterial[]
+
+  @@index([tenantId, isActive])
+}
+
+enum InvoiceType {
+  SERVICE
+  SALE
+  PROGRAM
+  SUBSCRIPTION
+  SURGERY
+  MIXED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PARTIALLY_PAID
+  PAID
+  CANCELLED
+  REFUNDED
+}
+
+enum LineKind {
+  SERVICE
+  PRODUCT
+  PROGRAM
+  SUBSCRIPTION
+  SURGERY
+  OTHER
+}
+
+model Invoice {
+  id                    String        @id @default(uuid()) @db.Uuid
+  tenantId              String        @db.Uuid
+  /// INV-000001, assigned when issued (drafts have none) — no gaps from drafts
+  code                  String?
+  clientId              String?       @db.Uuid
+  branchId              String        @db.Uuid
+  type                  InvoiceType
+  status                InvoiceStatus @default(DRAFT)
+  currency              String        @db.VarChar(3)
+  issuedAt              DateTime?
+  dueDate               DateTime?     @db.Date
+  subtotal              Decimal       @default(0) @db.Decimal(14, 2)
+  discountAmount        Decimal       @default(0) @db.Decimal(14, 2)
+  couponDiscount        Decimal       @default(0) @db.Decimal(14, 2)
+  /// Phase 5: discount from the client's corporate agreement
+  corporateDiscount     Decimal       @default(0) @db.Decimal(14, 2)
+  corporateAgreementId  String?       @db.Uuid
+  loyaltyDiscount       Decimal       @default(0) @db.Decimal(14, 2)
+  taxTotal              Decimal       @default(0) @db.Decimal(14, 2)
+  total                 Decimal       @default(0) @db.Decimal(14, 2)
+  /// net of refunds
+  paidTotal             Decimal       @default(0) @db.Decimal(14, 2)
+  refundedTotal         Decimal       @default(0) @db.Decimal(14, 2)
+  couponId              String?       @db.Uuid
+  loyaltyPointsRedeemed Int           @default(0)
+  salesStaffId          String?       @db.Uuid
+  notes                 String?
+  cancelledAt           DateTime?
+  cancelReason          String?
+  createdById           String?       @db.Uuid
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  client       Client?              @relation(fields: [clientId], references: [id])
+  branch       Branch               @relation(fields: [branchId], references: [id])
+  coupon       Coupon?              @relation(fields: [couponId], references: [id], onDelete: SetNull)
+  salesStaff   User?                @relation("InvoiceSeller", fields: [salesStaffId], references: [id], onDelete: SetNull)
+  lines        InvoiceLine[]
+  payments     Payment[]
+  installments InvoiceInstallment[]
+  commissions  CommissionEntry[]
+  redemption   CouponRedemption?
+
+  @@unique([tenantId, code])
+  @@index([tenantId, status, issuedAt])
+  @@index([tenantId, clientId])
+}
+
+model InvoiceLine {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String   @db.Uuid
+  invoiceId       String   @db.Uuid
+  sortOrder       Int      @default(0)
+  kind            LineKind
+  description     String
+  quantity        Decimal  @default(1) @db.Decimal(12, 3)
+  unitPrice       Decimal  @db.Decimal(14, 2)
+  /// line-level discount amount
+  discount        Decimal  @default(0) @db.Decimal(14, 2)
+  taxRate         Decimal  @default(0) @db.Decimal(5, 2)
+  /// qty × price − discount (before invoice-level discounts and tax)
+  lineTotal       Decimal  @db.Decimal(14, 2)
+  taxAmount       Decimal  @default(0) @db.Decimal(14, 2)
+  serviceId       String?  @db.Uuid
+  productId       String?  @db.Uuid
+  appointmentId   String?  @db.Uuid
+  clientProgramId String?  @db.Uuid
+  subscriptionId  String?  @db.Uuid
+  surgeryId       String?  @db.Uuid
+  /// staff who performed the service (execution commission)
+  performedById   String?  @db.Uuid
+  /// true once the invoice is cancelled: frees the source for re-billing
+  voided          Boolean  @default(false)
+
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  service     Service? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  product     Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  performedBy User?    @relation("LinePerformer", fields: [performedById], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, invoiceId])
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  TRANSFER
+  OTHER
+}
+
+enum PaymentKind {
+  PAYMENT
+  REFUND
+}
+
+model Payment {
+  id            String        @id @default(uuid()) @db.Uuid
+  tenantId      String        @db.Uuid
+  invoiceId     String        @db.Uuid
+  kind          PaymentKind   @default(PAYMENT)
+  /// RCPT-000001 (payments) / RFND-000001 (refunds)
+  receiptNo     String
+  amount        Decimal       @db.Decimal(14, 2)
+  method        PaymentMethod
+  reference     String?
+  note          String?
+  paidAt        DateTime      @default(now())
+  receivedById  String?       @db.Uuid
+  /// Phase 5: cash box / bank account the money went into (or out of)
+  cashAccountId String?       @db.Uuid
+  createdAt     DateTime      @default(now())
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, receiptNo])
+  @@index([tenantId, paidAt])
+  @@index([invoiceId])
+}
+
+model InvoiceInstallment {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @db.Uuid
+  invoiceId String   @db.Uuid
+  seq       Int
+  dueDate   DateTime @db.Date
+  amount    Decimal  @db.Decimal(14, 2)
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@unique([invoiceId, seq])
+  @@index([tenantId, dueDate])
+}
+
+enum CouponType {
+  PERCENT
+  FIXED
+}
+
+model Coupon {
+  id              String         @id @default(uuid()) @db.Uuid
+  tenantId        String         @db.Uuid
+  /// stored upper-case
+  code            String
+  name            String
+  type            CouponType
+  value           Decimal        @db.Decimal(14, 2)
+  maxDiscount     Decimal?       @db.Decimal(14, 2)
+  minAmount       Decimal?       @db.Decimal(14, 2)
+  startsAt        DateTime?
+  endsAt          DateTime?
+  usageLimit      Int?
+  perClientLimit  Int?
+  allServices     Boolean        @default(true)
+  serviceIds      String[]       @db.Uuid
+  /// empty = any client; otherwise only these clients
+  clientIds       String[]       @db.Uuid
+  /// staff/influencer who earns a commission on redemptions
+  ownerUserId     String?        @db.Uuid
+  /// Phase 6: external influencer who earns commission on this code
+  influencerId    String?        @db.Uuid
+  commissionType  CommissionType @default(NONE)
+  commissionValue Decimal        @default(0) @db.Decimal(14, 2)
+  isActive        Boolean        @default(true)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  invoices    Invoice[]
+  redemptions CouponRedemption[]
+  influencer  Influencer?        @relation(fields: [influencerId], references: [id], onDelete: SetNull)
+  campaigns   Campaign[]
+  offers      Offer[]
+
+  @@unique([tenantId, code])
+}
+
+model CouponRedemption {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @db.Uuid
+  couponId  String   @db.Uuid
+  invoiceId String   @unique @db.Uuid
+  clientId  String?  @db.Uuid
+  discount  Decimal  @db.Decimal(14, 2)
+  createdAt DateTime @default(now())
+
+  coupon  Coupon  @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, couponId])
+}
+
+model LoyaltyTier {
+  id         String  @id @default(uuid()) @db.Uuid
+  tenantId   String  @db.Uuid
+  name       String
+  nameEn     String?
+  /// lifetime earned points needed
+  minPoints  Int
+  /// earning multiplier for this tier
+  multiplier Decimal @default(1) @db.Decimal(5, 2)
+  color      String?
+
+  @@index([tenantId])
+}
+
+enum LoyaltyTxnType {
+  EARN
+  REDEEM
+  ADJUST
+  REVERSE
+}
+
+model LoyaltyTransaction {
+  id          String         @id @default(uuid()) @db.Uuid
+  tenantId    String         @db.Uuid
+  clientId    String         @db.Uuid
+  type        LoyaltyTxnType
+  /// signed: + earn/adjust up, − redeem/reverse
+  points      Int
+  invoiceId   String?        @db.Uuid
+  note        String?
+  createdById String?        @db.Uuid
+  createdAt   DateTime       @default(now())
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, clientId])
+  @@index([invoiceId])
+}
+
+// ------------------------------------------------------------------- HR ----
+
+enum EmploymentStatus {
+  ACTIVE
+  ON_LEAVE
+  SUSPENDED
+  TERMINATED
+}
+
+model EmployeeProfile {
+  userId           String           @id @db.Uuid
+  tenantId         String           @db.Uuid
+  employeeNo       String?
+  department       String?
+  specialty        String?
+  hireDate         DateTime?        @db.Date
+  baseSalary       Decimal          @default(0) @db.Decimal(14, 2)
+  fixedAllowance   Decimal          @default(0) @db.Decimal(14, 2)
+  /// monthly revenue target for performance %
+  monthlyTarget    Decimal          @default(0) @db.Decimal(14, 2)
+  dailyHours       Decimal          @default(8) @db.Decimal(4, 2)
+  status           EmploymentStatus @default(ACTIVE)
+  emergencyContact String?
+  notes            String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+/// Weekly schedule: one row per working day.
+model WorkShift {
+  id        String  @id @default(uuid()) @db.Uuid
+  tenantId  String  @db.Uuid
+  userId    String  @db.Uuid
+  branchId  String? @db.Uuid
+  /// 0 = Sunday … 6 = Saturday
+  dayOfWeek Int
+  startTime String
+  endTime   String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dayOfWeek])
+  @@index([tenantId])
+}
+
+enum AttendanceStatus {
+  PRESENT
+  LATE
+  ABSENT
+  LEAVE
+}
+
+model AttendanceRecord {
+  id           String           @id @default(uuid()) @db.Uuid
+  tenantId     String           @db.Uuid
+  userId       String           @db.Uuid
+  /// tenant-local calendar date
+  date         DateTime         @db.Date
+  checkIn      DateTime?
+  checkOut     DateTime?
+  status       AttendanceStatus
+  lateMinutes  Int              @default(0)
+  note         String?
+  recordedById String?          @db.Uuid
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([tenantId, date])
+}
+
+enum LeaveType {
+  ANNUAL
+  SICK
+  UNPAID
+  OTHER
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model LeaveRequest {
+  id           String      @id @default(uuid()) @db.Uuid
+  tenantId     String      @db.Uuid
+  userId       String      @db.Uuid
+  type         LeaveType
+  startDate    DateTime    @db.Date
+  endDate      DateTime    @db.Date
+  days         Int
+  reason       String?
+  status       LeaveStatus @default(PENDING)
+  decidedById  String?     @db.Uuid
+  decidedAt    DateTime?
+  decisionNote String?
+  createdAt    DateTime    @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+}
+
+enum AdvanceStatus {
+  OPEN
+  SETTLED
+}
+
+model SalaryAdvance {
+  id            String        @id @default(uuid()) @db.Uuid
+  tenantId      String        @db.Uuid
+  userId        String        @db.Uuid
+  amount        Decimal       @db.Decimal(14, 2)
+  givenAt       DateTime      @db.Date
+  note          String?
+  status        AdvanceStatus @default(OPEN)
+  payrollRunId  String?       @db.Uuid
+  cashAccountId String?       @db.Uuid
+  createdById   String?       @db.Uuid
+  createdAt     DateTime      @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+}
+
+enum PayrollStatus {
+  DRAFT
+  APPROVED
+  PAID
+}
+
+model PayrollRun {
+  id                    String        @id @default(uuid()) @db.Uuid
+  tenantId              String        @db.Uuid
+  /// YYYY-MM
+  period                String
+  status                PayrollStatus @default(DRAFT)
+  totalNet              Decimal       @default(0) @db.Decimal(14, 2)
+  approvedById          String?       @db.Uuid
+  approvedAt            DateTime?
+  paidAt                DateTime?
+  paidFromCashAccountId String?       @db.Uuid
+  createdById           String?       @db.Uuid
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  items PayrollItem[]
+
+  @@unique([tenantId, period])
+}
+
+model PayrollItem {
+  id               String  @id @default(uuid()) @db.Uuid
+  tenantId         String  @db.Uuid
+  runId            String  @db.Uuid
+  userId           String  @db.Uuid
+  baseSalary       Decimal @db.Decimal(14, 2)
+  allowances       Decimal @default(0) @db.Decimal(14, 2)
+  commissions      Decimal @default(0) @db.Decimal(14, 2)
+  deductions       Decimal @default(0) @db.Decimal(14, 2)
+  advances         Decimal @default(0) @db.Decimal(14, 2)
+  absenceDays      Decimal @default(0) @db.Decimal(6, 2)
+  absenceDeduction Decimal @default(0) @db.Decimal(14, 2)
+  net              Decimal @db.Decimal(14, 2)
+  note             String?
+
+  run  PayrollRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  user User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, userId])
+  @@index([tenantId])
+}
+
+enum CommissionSource {
+  SERVICE_EXEC
+  SERVICE_MARKETING
+  SURGERY
+  REVIEW
+  COUPON
+  PRODUCT_SALE
+  ADJUSTMENT
+}
+
+enum CommissionStatus {
+  PENDING
+  APPROVED
+  PAID
+  VOID
+}
+
+model CommissionEntry {
+  id            String           @id @default(uuid()) @db.Uuid
+  tenantId      String           @db.Uuid
+  userId        String           @db.Uuid
+  source        CommissionSource
+  invoiceId     String?          @db.Uuid
+  invoiceLineId String?          @db.Uuid
+  reviewId      String?          @db.Uuid
+  baseAmount    Decimal          @db.Decimal(14, 2)
+  rateType      CommissionType
+  rateValue     Decimal          @db.Decimal(14, 2)
+  /// signed: negative entries reverse earlier ones after a refund
+  amount        Decimal          @db.Decimal(14, 2)
+  status        CommissionStatus @default(PENDING)
+  earnedAt      DateTime
+  approvedById  String?          @db.Uuid
+  approvedAt    DateTime?
+  payrollRunId  String?          @db.Uuid
+  note          String?
+  createdAt     DateTime         @default(now())
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  invoice Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, userId, status])
+  @@index([tenantId, earnedAt])
+}
+
+model EmployeeEvaluation {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid
+  userId      String   @db.Uuid
+  /// YYYY-MM
+  period      String
+  /// 1..5
+  rating      Int
+  notes       String?
+  evaluatorId String?  @db.Uuid
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId])
+}
+
+// =============================================================== PHASE 5 ====
+// Inventory (warehouses, lots with expiry, FIFO movements, receipts, transfers,
+// waste, purchase orders, stock counts), double-entry accounting (chart of
+// accounts, cash boxes & banks, journals, vouchers, FX rates), corporate contracts.
+
+model ItemGroup {
+  id        String  @id @default(uuid()) @db.Uuid
+  tenantId  String  @db.Uuid
+  parentId  String? @db.Uuid
+  name      String
+  sortOrder Int     @default(0)
+
+  parent   ItemGroup?  @relation("ItemGroupTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children ItemGroup[] @relation("ItemGroupTree")
+  items    Product[]
+
+  @@index([tenantId])
+}
+
+model Warehouse {
+  id        String  @id @default(uuid()) @db.Uuid
+  tenantId  String  @db.Uuid
+  branchId  String  @db.Uuid
+  code      String
+  name      String
+  /// default store of its branch for sales and automatic consumption
+  isDefault Boolean @default(false)
+  isActive  Boolean @default(true)
+
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, code])
+  @@index([tenantId, branchId])
+}
+
+model Supplier {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid
+  name        String
+  contactName String?
+  phone       String?
+  email       String?
+  address     String?
+  taxNo       String?
+  notes       String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId])
+}
+
+/// A quantity of one item in one warehouse with its own cost and expiry.
+/// quantity can never go below zero (CHECK) — no negative stock.
+model StockLot {
+  id          String    @id @default(uuid()) @db.Uuid
+  tenantId    String    @db.Uuid
+  itemId      String    @db.Uuid
+  warehouseId String    @db.Uuid
+  lotNo       String?
+  expiryDate  DateTime? @db.Date
+  quantity    Decimal   @db.Decimal(14, 3)
+  unitCost    Decimal   @db.Decimal(14, 4)
+  receivedAt  DateTime  @default(now())
+
+  @@index([tenantId, itemId, warehouseId])
+  @@index([tenantId, expiryDate])
+}
+
+enum StockDocType {
+  RECEIPT
+  ISSUE
+  TRANSFER
+  WASTE
+  ADJUSTMENT
+  SALE
+  CONSUMPTION
+  RETURN
+}
+
+model StockDocument {
+  id              String       @id @default(uuid()) @db.Uuid
+  tenantId        String       @db.Uuid
+  code            String
+  type            StockDocType
+  warehouseId     String       @db.Uuid
+  toWarehouseId   String?      @db.Uuid
+  supplierId      String?      @db.Uuid
+  /// receipt paid immediately from this cash box (else on supplier credit)
+  cashAccountId   String?      @db.Uuid
+  purchaseOrderId String?      @db.Uuid
+  invoiceId       String?      @db.Uuid
+  appointmentId   String?      @db.Uuid
+  surgeryId       String?      @db.Uuid
+  countId         String?      @db.Uuid
+  date            DateTime     @default(now())
+  reference       String?
+  notes           String?
+  totalCost       Decimal      @default(0) @db.Decimal(14, 2)
+  createdById     String?      @db.Uuid
+  createdAt       DateTime     @default(now())
+
+  movements StockMovement[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, type, date])
+  @@index([invoiceId])
+}
+
+model StockMovement {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid
+  documentId  String   @db.Uuid
+  itemId      String   @db.Uuid
+  warehouseId String   @db.Uuid
+  lotId       String?  @db.Uuid
+  /// signed: + in, − out
+  quantity    Decimal  @db.Decimal(14, 3)
+  unitCost    Decimal  @db.Decimal(14, 4)
+  totalCost   Decimal  @db.Decimal(14, 2)
+  createdAt   DateTime @default(now())
+
+  document StockDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, itemId, createdAt])
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  ORDERED
+  PARTIAL
+  RECEIVED
+  CANCELLED
+}
+
+model PurchaseOrder {
+  id           String              @id @default(uuid()) @db.Uuid
+  tenantId     String              @db.Uuid
+  code         String
+  supplierId   String              @db.Uuid
+  warehouseId  String              @db.Uuid
+  status       PurchaseOrderStatus @default(DRAFT)
+  orderDate    DateTime            @default(now()) @db.Date
+  expectedDate DateTime?           @db.Date
+  notes        String?
+  total        Decimal             @default(0) @db.Decimal(14, 2)
+  createdById  String?             @db.Uuid
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  lines PurchaseOrderLine[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, status])
+}
+
+model PurchaseOrderLine {
+  id          String  @id @default(uuid()) @db.Uuid
+  tenantId    String  @db.Uuid
+  orderId     String  @db.Uuid
+  itemId      String  @db.Uuid
+  quantity    Decimal @db.Decimal(14, 3)
+  unitCost    Decimal @db.Decimal(14, 4)
+  receivedQty Decimal @default(0) @db.Decimal(14, 3)
+
+  order PurchaseOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, orderId])
+}
+
+enum StockCountStatus {
+  DRAFT
+  POSTED
+  CANCELLED
+}
+
+model StockCount {
+  id          String           @id @default(uuid()) @db.Uuid
+  tenantId    String           @db.Uuid
+  code        String
+  warehouseId String           @db.Uuid
+  status      StockCountStatus @default(DRAFT)
+  notes       String?
+  postedAt    DateTime?
+  createdById String?          @db.Uuid
+  createdAt   DateTime         @default(now())
+
+  lines StockCountLine[]
+
+  @@unique([tenantId, code])
+}
+
+model StockCountLine {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid
+  countId     String   @db.Uuid
+  itemId      String   @db.Uuid
+  expectedQty Decimal  @db.Decimal(14, 3)
+  countedQty  Decimal? @db.Decimal(14, 3)
+
+  count StockCount @relation(fields: [countId], references: [id], onDelete: Cascade)
+
+  @@unique([countId, itemId])
+}
+
+/// Materials a service consumes per execution (deducted automatically).
+model ServiceMaterial {
+  tenantId  String  @db.Uuid
+  serviceId String  @db.Uuid
+  itemId    String  @db.Uuid
+  quantity  Decimal @db.Decimal(12, 3)
+
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  item    Product @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@id([serviceId, itemId])
+  @@index([tenantId])
+}
+
+// ----------------------------------------------------------- accounting ----
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+model Account {
+  id        String      @id @default(uuid()) @db.Uuid
+  tenantId  String      @db.Uuid
+  code      String
+  name      String
+  nameEn    String?
+  type      AccountType
+  parentId  String?     @db.Uuid
+  /// group accounts only organise the tree; postings go to leaf accounts
+  isGroup   Boolean     @default(false)
+  /// stable key used by automatic postings (AR, INVENTORY, REV_SERVICES …)
+  systemKey String?
+  isActive  Boolean     @default(true)
+  createdAt DateTime    @default(now())
+
+  parent   Account?      @relation("AccountTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children Account[]     @relation("AccountTree")
+  lines    JournalLine[]
+
+  @@unique([tenantId, code])
+  @@unique([tenantId, systemKey])
+}
+
+enum CashAccountKind {
+  CASH
+  BANK
+}
+
+/// Cash box or bank account; each has its own ledger account.
+model CashAccount {
+  id        String          @id @default(uuid()) @db.Uuid
+  tenantId  String          @db.Uuid
+  kind      CashAccountKind
+  name      String
+  branchId  String?         @db.Uuid
+  accountId String          @unique @db.Uuid
+  currency  String          @db.VarChar(3)
+  bankName  String?
+  accountNo String?
+  /// default box for its branch and kind (cash → CASH, card/transfer → BANK)
+  isDefault Boolean         @default(false)
+  isActive  Boolean         @default(true)
+
+  @@index([tenantId])
+}
+
+/// Units of base currency per 1 unit of `currency` on `date`.
+model ExchangeRate {
+  id       String   @id @default(uuid()) @db.Uuid
+  tenantId String   @db.Uuid
+  currency String   @db.VarChar(3)
+  rate     Decimal  @db.Decimal(18, 8)
+  date     DateTime @db.Date
+
+  @@unique([tenantId, currency, date])
+}
+
+enum JournalSource {
+  MANUAL
+  OPENING
+  INVOICE
+  INVOICE_CANCEL
+  PAYMENT
+  REFUND
+  STOCK
+  PAYROLL
+  PAYROLL_PAYMENT
+  ADVANCE
+  VOUCHER
+  INFLUENCER
+}
+
+/// Immutable once posted; corrections are reversal entries.
+/// A deferred constraint trigger enforces sum(debit) = sum(credit) at commit.
+model JournalEntry {
+  id           String        @id @default(uuid()) @db.Uuid
+  tenantId     String        @db.Uuid
+  code         String
+  date         DateTime
+  description  String
+  source       JournalSource
+  sourceId     String?       @db.Uuid
+  branchId     String?       @db.Uuid
+  reversalOfId String?       @db.Uuid
+  createdById  String?       @db.Uuid
+  createdAt    DateTime      @default(now())
+
+  lines JournalLine[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, date])
+  @@index([tenantId, source, sourceId])
+}
+
+model JournalLine {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid
+  entryId     String   @db.Uuid
+  accountId   String   @db.Uuid
+  /// amounts in the tenant base currency
+  debit       Decimal  @default(0) @db.Decimal(16, 2)
+  credit      Decimal  @default(0) @db.Decimal(16, 2)
+  fcCurrency  String?  @db.VarChar(3)
+  fcAmount    Decimal? @db.Decimal(16, 2)
+  description String?
+  branchId    String?  @db.Uuid
+  clientId    String?  @db.Uuid
+  supplierId  String?  @db.Uuid
+
+  entry   JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  account Account      @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, accountId])
+  @@index([entryId])
+}
+
+enum VoucherType {
+  RECEIPT
+  PAYMENT
+}
+
+enum VoucherStatus {
+  POSTED
+  VOID
+}
+
+/// Receipt / payment voucher — money in or out of a cash box against any account.
+model Voucher {
+  id               String        @id @default(uuid()) @db.Uuid
+  tenantId         String        @db.Uuid
+  code             String
+  type             VoucherType
+  status           VoucherStatus @default(POSTED)
+  date             DateTime
+  cashAccountId    String        @db.Uuid
+  counterAccountId String        @db.Uuid
+  /// in base currency
+  amount           Decimal       @db.Decimal(16, 2)
+  currency         String        @db.VarChar(3)
+  fcAmount         Decimal       @db.Decimal(16, 2)
+  rate             Decimal       @db.Decimal(18, 8)
+  supplierId       String?       @db.Uuid
+  clientId         String?       @db.Uuid
+  payee            String?
+  description      String
+  branchId         String?       @db.Uuid
+  journalEntryId   String?       @db.Uuid
+  createdById      String?       @db.Uuid
+  createdAt        DateTime      @default(now())
+
+  @@unique([tenantId, code])
+  @@index([tenantId, type, date])
+}
+
+// ---------------------------------------------------- corporate contracts ----
+
+model CorporateAccount {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid
+  name        String
+  contactName String?
+  phone       String?
+  email       String?
+  address     String?
+  taxNo       String?
+  notes       String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  agreements CorporateAgreement[]
+  members    CorporateMember[]
+
+  @@index([tenantId])
+}
+
+model CorporateAgreement {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String   @db.Uuid
+  corporateId     String   @db.Uuid
+  name            String
+  startDate       DateTime @db.Date
+  endDate         DateTime @db.Date
+  discountPercent Decimal  @db.Decimal(5, 2)
+  allServices     Boolean  @default(true)
+  serviceIds      String[] @db.Uuid
+  /// which member types benefit (EMPLOYEE, FAMILY)
+  memberTypes     String[]
+  allowCoupons    Boolean  @default(false)
+  isActive        Boolean  @default(true)
+  notes           String?
+  createdAt       DateTime @default(now())
+
+  corporate CorporateAccount @relation(fields: [corporateId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, corporateId])
+}
+
+model CorporateMember {
+  id          String    @id @default(uuid()) @db.Uuid
+  tenantId    String    @db.Uuid
+  corporateId String    @db.Uuid
+  clientId    String    @db.Uuid
+  /// EMPLOYEE | FAMILY
+  memberType  String    @default("EMPLOYEE")
+  employeeNo  String?
+  validUntil  DateTime? @db.Date
+  createdAt   DateTime  @default(now())
+
+  corporate CorporateAccount @relation(fields: [corporateId], references: [id], onDelete: Cascade)
+  client    Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([corporateId, clientId])
+  @@index([tenantId, clientId])
+}
+
+// =================================================================== Phase 6 ====
+// Notifications & messaging (WhatsApp Business Cloud API), marketing (segments,
+// campaigns, offers, influencers), staff in-app notifications.
+
+enum MessageChannel {
+  WHATSAPP
+  SMS
+  EMAIL
+}
+
+enum MessageStatus {
+  QUEUED
+  SENDING
+  SENT
+  DELIVERED
+  READ
+  FAILED
+  CANCELLED
+}
+
+enum MessageCategory {
+  APPOINTMENT_CONFIRM
+  APPOINTMENT_REMINDER
+  PAYMENT_REMINDER
+  SUBSCRIPTION_EXPIRY
+  SESSION_REMINDER
+  FOLLOW_UP
+  BIRTHDAY
+  PROMOTION
+  REACTIVATION
+  CUSTOM
+}
+
+enum MessagingProvider {
+  /// nothing is sent; queued messages are cancelled
+  DISABLED
+  /// simulated delivery for demos/testing — no external calls
+  SANDBOX
+  /// official Meta WhatsApp Business Cloud API
+  WHATSAPP_CLOUD
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  SENT
+  CANCELLED
+}
+
+/// Per-tenant messaging configuration. Secrets are AES-256-GCM encrypted and never returned by the API.
+model MessagingSettings {
+  id                 String            @id @default(uuid()) @db.Uuid
+  tenantId           String            @unique @db.Uuid
+  provider           MessagingProvider @default(SANDBOX)
+  phoneNumberId      String?
+  wabaId             String?
+  accessTokenEnc     String?
+  appSecretEnc       String?
+  /// token Meta echoes when verifying the webhook URL
+  verifyToken        String?
+  /// digits only, used to turn local numbers (07xx…) into international format
+  defaultCountryCode String            @default("964")
+  /// no automatic / marketing sends between these local hours (confirmations excepted)
+  quietStartHour     Int               @default(22)
+  quietEndHour       Int               @default(9)
+  /// per-category automation rules, see services/messaging.ts DEFAULT_RULES
+  rules              Json              @default("{}")
+  updatedAt          DateTime          @updatedAt
+}
+
+model MessageTemplate {
+  id             String          @id @default(uuid()) @db.Uuid
+  tenantId       String          @db.Uuid
+  category       MessageCategory
+  name           String
+  channel        MessageChannel  @default(WHATSAPP)
+  language       String          @default("ar")
+  /// text with {{placeholders}}; for WhatsApp templates the placeholders map, in order, to {{1}}, {{2}} …
+  body           String
+  /// approved template name in WhatsApp Manager (required for business-initiated messages)
+  waTemplateName String?
+  waLanguage     String?
+  isDefault      Boolean         @default(false)
+  isActive       Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  messages  Message[]
+  campaigns Campaign[]
+
+  @@index([tenantId, category])
+}
+
+/// Outbox + delivery log. One row per message to one recipient.
+model Message {
+  id                String          @id @default(uuid()) @db.Uuid
+  tenantId          String          @db.Uuid
+  channel           MessageChannel  @default(WHATSAPP)
+  category          MessageCategory
+  status            MessageStatus   @default(QUEUED)
+  toPhone           String
+  clientId          String?         @db.Uuid
+  templateId        String?         @db.Uuid
+  campaignId        String?         @db.Uuid
+  body              String
+  /// ordered values for the WhatsApp template body parameters
+  params            String[]
+  /// idempotency key for automations, e.g. appt-remind:<id>
+  dedupeKey         String?
+  /// what the message is about (appointment / invoice / subscription / program) — re-checked before sending
+  relatedType       String?
+  relatedId         String?         @db.Uuid
+  scheduledFor      DateTime        @default(now())
+  attempts          Int             @default(0)
+  providerMessageId String?
+  error             String?
+  sentAt            DateTime?
+  deliveredAt       DateTime?
+  readAt            DateTime?
+  failedAt          DateTime?
+  createdById       String?         @db.Uuid
+  createdAt         DateTime        @default(now())
+
+  client   Client?          @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  template MessageTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  campaign Campaign?        @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, dedupeKey])
+  @@index([tenantId, status, scheduledFor])
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@index([tenantId, campaignId])
+  @@index([providerMessageId])
+}
+
+/// In-app notification for one staff member (bell icon).
+model Notification {
+  id        String    @id @default(uuid()) @db.Uuid
+  tenantId  String    @db.Uuid
+  userId    String    @db.Uuid
+  type      String
+  title     String
+  body      String?
+  link      String?
+  dedupeKey String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId, dedupeKey])
+  @@index([tenantId, userId, readAt, createdAt(sort: Desc)])
+}
+
+/// Saved client filter (audience) used by campaigns and follow-up lists.
+model Segment {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid
+  name        String
+  description String?
+  filter      Json
+  createdById String?  @db.Uuid
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  campaigns Campaign[]
+}
+
+model Campaign {
+  id              String         @id @default(uuid()) @db.Uuid
+  tenantId        String         @db.Uuid
+  code            String
+  name            String
+  /// PROMOTION | REACTIVATION | REMINDER | AWARENESS | EVENT
+  objective       String         @default("PROMOTION")
+  channel         MessageChannel @default(WHATSAPP)
+  status          CampaignStatus @default(DRAFT)
+  segmentId       String?        @db.Uuid
+  /// audience filter used at send time (copied from the segment or ad-hoc)
+  filter          Json           @default("{}")
+  templateId      String?        @db.Uuid
+  body            String?
+  couponId        String?        @db.Uuid
+  offerId         String?        @db.Uuid
+  /// external spend (ads, printing) for ROI
+  budget          Decimal        @default(0) @db.Decimal(14, 2)
+  scheduledAt     DateTime?
+  sentAt          DateTime?
+  /// purchases / bookings within this many days of sending count as conversions
+  attributionDays Int            @default(30)
+  recipients      Int            @default(0)
+  notes           String?
+  createdById     String?        @db.Uuid
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  segment  Segment?         @relation(fields: [segmentId], references: [id], onDelete: SetNull)
+  template MessageTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  coupon   Coupon?          @relation(fields: [couponId], references: [id], onDelete: SetNull)
+  offer    Offer?           @relation(fields: [offerId], references: [id], onDelete: SetNull)
+  messages Message[]
+  clients  Client[]         @relation("ClientCampaign")
+
+  @@unique([tenantId, code])
+}
+
+/// Published offer / promotion (العروض): optional coupon and covered services.
+model Offer {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @db.Uuid
+  title         String
+  description   String?
+  startsAt      DateTime
+  endsAt        DateTime
+  couponId      String?  @db.Uuid
+  serviceIds    String[] @db.Uuid
+  price         Decimal? @db.Decimal(14, 2)
+  originalPrice Decimal? @db.Decimal(14, 2)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  coupon    Coupon?    @relation(fields: [couponId], references: [id], onDelete: SetNull)
+  campaigns Campaign[]
+}
+
+model Influencer {
+  id              String         @id @default(uuid()) @db.Uuid
+  tenantId        String         @db.Uuid
+  name            String
+  handle          String?
+  /// instagram | tiktok | snapchat | youtube | other
+  platform        String?
+  phone           String?
+  email           String?
+  commissionType  CommissionType @default(PERCENT)
+  commissionValue Decimal        @default(0) @db.Decimal(14, 2)
+  /// invoices of a referred client within this many days of joining earn commission
+  attributionDays Int            @default(90)
+  notes           String?
+  isActive        Boolean        @default(true)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  clients     Client[]               @relation("ClientInfluencer")
+  coupons     Coupon[]
+  commissions InfluencerCommission[]
+}
+
+model InfluencerCommission {
+  id             String           @id @default(uuid()) @db.Uuid
+  tenantId       String           @db.Uuid
+  influencerId   String           @db.Uuid
+  invoiceId      String?          @db.Uuid
+  clientId       String?          @db.Uuid
+  /// REFERRAL (referred client) | COUPON (influencer's code) | ADJUSTMENT
+  source         String
+  baseAmount     Decimal          @db.Decimal(14, 2)
+  /// signed: refunds create negative rows
+  amount         Decimal          @db.Decimal(14, 2)
+  status         CommissionStatus @default(PENDING)
+  earnedAt       DateTime         @default(now())
+  paidAt         DateTime?
+  journalEntryId String?          @db.Uuid
+  note           String?
+  createdAt      DateTime         @default(now())
+
+  influencer Influencer @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, influencerId, status])
+}
+
+// =================================================================== Phase 7 ====
+// SaaS billing for the platform itself (independent from clinics' own invoices),
+// platform settings, rate limiting.
+
+enum PlatformInvoiceStatus {
+  ISSUED
+  PAID
+  VOID
+}
+
+enum PlatformInvoiceKind {
+  /// first paid period after signup / trial
+  NEW
+  RENEWAL
+  /// plan change mid-period (prorated)
+  UPGRADE
+  MANUAL
+}
+
+enum PlatformPaymentStatus {
+  /// submitted by the clinic (bank transfer reference), awaiting confirmation
+  PENDING
+  CONFIRMED
+  REJECTED
+}
+
+/// Single row (id = 1): the platform company's billing details and lifecycle rules.
+model PlatformSettings {
+  id              Int      @id @default(1)
+  companyName     String   @default("MedCRM")
+  companyAddress  String?
+  taxNo           String?
+  /// % added to subscription invoices
+  taxRate         Decimal  @default(0) @db.Decimal(5, 2)
+  bankDetails     String?
+  invoiceFooter   String?
+  supportEmail    String?
+  /// days a subscription stays usable after its period ends while the renewal invoice is unpaid
+  graceDays       Int      @default(7)
+  /// renewal invoices are issued this many days before the period ends
+  renewalLeadDays Int      @default(7)
+  /// reminder days before trial / subscription end
+  reminderDays    Int[]    @default([14, 7, 3, 1])
+  /// self-service signup on /signup
+  allowSignup     Boolean  @default(true)
+  updatedAt       DateTime @updatedAt
+}
+
+model PlatformCoupon {
+  id             String     @id @default(uuid()) @db.Uuid
+  code           String     @unique
+  name           String
+  type           CouponType
+  value          Decimal    @db.Decimal(12, 2)
+  /// number of invoices the discount applies to (null = every invoice)
+  durationCycles Int?
+  maxRedemptions Int?
+  redemptions    Int        @default(0)
+  /// empty = all plans
+  planIds        String[]   @db.Uuid
+  validFrom      DateTime?
+  validUntil     DateTime?
+  isActive       Boolean    @default(true)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  invoices      PlatformInvoice[]
+  subscriptions TenantSubscription[]
+}
+
+model PlatformInvoice {
+  id             String                @id @default(uuid()) @db.Uuid
+  /// SUB-2026-000123 (platform-wide sequence)
+  number         String                @unique
+  tenantId       String                @db.Uuid
+  subscriptionId String?               @db.Uuid
+  planId         String                @db.Uuid
+  kind           PlatformInvoiceKind
+  cycle          BillingCycle
+  periodStart    DateTime
+  periodEnd      DateTime
+  currency       String                @db.VarChar(3)
+  subtotal       Decimal               @db.Decimal(12, 2)
+  discount       Decimal               @default(0) @db.Decimal(12, 2)
+  /// unused value of the previous plan (upgrades)
+  credit         Decimal               @default(0) @db.Decimal(12, 2)
+  tax            Decimal               @default(0) @db.Decimal(12, 2)
+  total          Decimal               @db.Decimal(12, 2)
+  status         PlatformInvoiceStatus @default(ISSUED)
+  dueDate        DateTime
+  issuedAt       DateTime              @default(now())
+  paidAt         DateTime?
+  voidedAt       DateTime?
+  couponId       String?               @db.Uuid
+  notes          String?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  tenant       Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  subscription TenantSubscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  plan         Plan                @relation(fields: [planId], references: [id])
+  coupon       PlatformCoupon?     @relation(fields: [couponId], references: [id], onDelete: SetNull)
+  payments     PlatformPayment[]
+
+  @@index([tenantId, status])
+  @@index([status, dueDate])
+}
+
+model PlatformPayment {
+  id            String                @id @default(uuid()) @db.Uuid
+  tenantId      String                @db.Uuid
+  invoiceId     String                @db.Uuid
+  amount        Decimal               @db.Decimal(12, 2)
+  /// BANK_TRANSFER | CARD | CASH | OTHER
+  method        String
+  reference     String?
+  note          String?
+  status        PlatformPaymentStatus @default(PENDING)
+  paidAt        DateTime              @default(now())
+  submittedById String?               @db.Uuid
+  confirmedById String?               @db.Uuid
+  confirmedAt   DateTime?
+  createdAt     DateTime              @default(now())
+
+  invoice PlatformInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([status])
+}
+
+/// Fixed-window rate limiter shared by all server instances.
+model RateLimit {
+  key         String   @id
+  windowStart DateTime
+  count       Int
+}
