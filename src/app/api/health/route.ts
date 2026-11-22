@@ -38,6 +38,21 @@ export async function GET() {
     db = code ? `error:${code}` : (e instanceof Error && e.message.includes("not configured") ? "error:not-configured" : "error");
   }
 
+  // Shape only (length, quoting, whitespace, scheme) — enough to spot a bad paste, never the value.
+  const shape = (v: string | undefined) => v === undefined ? null : {
+    length: v.length,
+    quoted: /^["']|["']$/.test(v),
+    whitespace: /\s/.test(v),
+    startsWithScheme: /^postgres(ql)?:\/\//.test(v),
+    hasEquals: v.includes("="),
+  };
+  const detail = {
+    DATABASE_URL_APP: shape(process.env.DATABASE_URL_APP),
+    DATABASE_URL_PLATFORM: shape(process.env.DATABASE_URL_PLATFORM),
+    SESSION_SECRET: shape(process.env.SESSION_SECRET),
+    CRON_SECRET: shape(process.env.CRON_SECRET),
+  };
+
   const healthy = db === "ok" && env.SESSION_SECRET === "ok";
-  return NextResponse.json({ healthy, env, db }, { status: healthy ? 200 : 503, headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json({ healthy, env, db, ...(healthy ? {} : { detail }) },{ status: healthy ? 200 : 503, headers: { "Cache-Control": "no-store" } });
 }
