@@ -10,3 +10,4 @@ uploads/
 # Local scripts containing hosted DB credentials
 scripts/setup-neon.ts
 scripts/test-roles.ts
+.env.vercel
