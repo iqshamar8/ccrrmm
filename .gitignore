@@ -6,3 +6,7 @@ next-env.d.ts
 *.tsbuildinfo
 uploads/
 .claude/
+
+# Local scripts containing hosted DB credentials
+scripts/setup-neon.ts
+scripts/test-roles.ts
