@@ -90,7 +90,7 @@ export function LineChart({ data, series, height = 220 }: { data: Point[]; serie
           const last = data[data.length - 1];
           return (
             <g key={s.key}>
-              <path d={path} fill="none" stroke={s.color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+              <path d={path} pathLength={1} className="chart-draw" fill="none" stroke={s.color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
               {last && <text x={x(data.length - 1) + 8} y={y(Number(last[s.key]) || 0)} dy="0.32em" className="fill-[var(--text)] text-[11px] font-medium">{fmtShort(Number(last[s.key]) || 0)}</text>}
               {hover !== null && <circle cx={x(hover)} cy={y(Number(data[hover][s.key]) || 0)} r={4} fill={s.color} stroke="var(--surface)" strokeWidth={2} />}
             </g>
@@ -132,7 +132,7 @@ export function BarChart({ data, valueKey, label, color = "var(--series-1)", hei
           return (
             <g key={i} onMouseEnter={() => setHover(i)}>
               <rect x={pad.l + slot * i} y={pad.t} width={slot} height={ih} fill="transparent" />
-              {h > 0 && <path d={`M${cx - bw / 2},${pad.t + ih}V${top + r}q0,-${r} ${r},-${r}h${bw - 2 * r}q${r},0 ${r},${r}V${pad.t + ih}z`} fill={color} opacity={hover === null || hover === i ? 1 : 0.55} />}
+              {h > 0 && <path d={`M${cx - bw / 2},${pad.t + ih}V${top + r}q0,-${r} ${r},-${r}h${bw - 2 * r}q${r},0 ${r},${r}V${pad.t + ih}z`} fill={color} opacity={hover === null || hover === i ? 1 : 0.55} className="chart-grow" style={{ animationDelay: `${Math.min(i, 20) * 25}ms`, transition: "opacity .2s" }} />}
               {i % every === 0 && <text x={cx} y={height - 8} textAnchor="middle" className="fill-[var(--muted)] text-[10px]">{d.label}</text>}
             </g>
           );
@@ -152,7 +152,7 @@ export function RankBars({ rows, valueLabel, secondary }: { rows: { id: string; 
       {rows.map((r) => (
         <li key={r.id} className="text-sm" title={`${r.name}: ${fmt(r.value)} ${valueLabel}${r.extra ? ` · ${r.extra}` : ""}`}>
           <div className="mb-1 flex justify-between gap-2"><span className="truncate">{r.name}</span><span className="shrink-0 tabular"><b>{fmt(r.value)}</b>{r.extra && <span className="ms-2 text-xs text-muted">{r.extra}</span>}</span></div>
-          <div className="h-2 rounded-full bg-surface-2"><div className="h-2 rounded-full" style={{ width: `${(r.value / max) * 100}%`, background: "var(--series-1)" }} /></div>
+          <div className="h-2 rounded-full bg-surface-2"><div className="rank-fill h-2 rounded-full" style={{ width: `${(r.value / max) * 100}%`, background: "var(--series-1)" }} /></div>
         </li>
       ))}
       {secondary && <li className="text-xs text-muted">{secondary}</li>}

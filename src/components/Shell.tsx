@@ -53,6 +53,14 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     try { setCollapsed(localStorage.getItem("sidebar") === "1"); } catch {}
   }, []);
   useEffect(() => setMobileOpen(false), [path]);
+  // Top bar gets a soft shadow once content scrolls under it.
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    const on = () => setScrolled(window.scrollY > 4);
+    on();
+    window.addEventListener("scroll", on, { passive: true });
+    return () => window.removeEventListener("scroll", on);
+  }, []);
 
   const platform = s.user.isPlatformAdmin;
   const groups: { title?: { ar: string; en: string }; items: NavItem[] }[] = platform
@@ -141,11 +149,11 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
   const sidebar = (
     <nav className="flex h-full flex-col">
-      <div className="flex h-16 items-center gap-3 border-b border-line px-4">
+      <div className="sidebar-head flex h-16 items-center gap-3 border-b border-line px-4">
         {s.tenant?.logoUrl
           // eslint-disable-next-line @next/next/no-img-element
-          ? <img src={s.tenant.logoUrl} alt="" className="size-9 rounded-lg object-cover" />
-          : <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-brand font-semibold text-white">{(s.tenant?.name ?? "M").slice(0, 1)}</span>}
+          ? <img src={s.tenant.logoUrl} alt="" className="brand-mark size-9 rounded-lg object-cover" />
+          : <span className="brand-mark grid size-9 shrink-0 place-items-center rounded-lg bg-brand font-semibold text-white">{(s.tenant?.name ?? "M").slice(0, 1)}</span>}
         {!collapsed && (
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold">{s.tenant?.name ?? "MedCRM"}</p>
@@ -161,8 +169,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             <div key={i} className="mb-4">
               {g.title && !collapsed && <p className="mb-1 px-3 text-xs font-medium text-muted">{tr(g.title.ar, g.title.en)}</p>}
               {items.map((it) => (
-                <Link key={it.href} href={it.href} title={collapsed ? tr(it.ar, it.en) : undefined}
-                  className={`mb-0.5 flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${isActive(it.href) ? "bg-brand/10 font-medium text-brand" : "text-ink hover:bg-surface-2"}`}>
+                <Link key={it.href} href={it.href} title={collapsed ? tr(it.ar, it.en) : undefined} aria-current={isActive(it.href) ? "page" : undefined}
+                  className={`nav-link mb-0.5 flex items-center gap-3 rounded-lg px-3 py-2 text-sm ${isActive(it.href) ? "bg-brand/10 font-medium text-brand" : "text-ink hover:bg-surface-2"}`}>
                   <Icon d={ICONS[it.icon]} />
                   {!collapsed && <span className="truncate">{tr(it.ar, it.en)}</span>}
                 </Link>
@@ -188,13 +196,13 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       </aside>
       {mobileOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setMobileOpen(false)} />
-          <aside className="absolute inset-y-0 start-0 w-72 bg-surface shadow-xl">{sidebar}</aside>
+          <div className="drawer-backdrop absolute inset-0 bg-black/40" onClick={() => setMobileOpen(false)} />
+          <aside className="drawer-panel absolute inset-y-0 start-0 w-72 bg-surface shadow-xl">{sidebar}</aside>
         </div>
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-40 flex h-16 items-center gap-2 border-b border-line bg-surface/90 px-4 backdrop-blur print:hidden">
+        <header data-scrolled={scrolled} className="app-topbar sticky top-0 z-40 flex h-16 items-center gap-2 border-b border-line bg-surface/90 px-4 backdrop-blur print:hidden">
           <button className="rounded-lg p-2 hover:bg-surface-2 lg:hidden" onClick={() => setMobileOpen(true)} aria-label="menu">
             <Icon d="M4 6h16M4 12h16M4 18h16" />
           </button>
@@ -213,7 +221,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                 <span className="block text-xs text-muted leading-tight">{s.user.roleName ?? tr("مالك المنصة", "Platform owner")}</span>
               </span>
             </summary>
-            <div className="absolute end-0 mt-2 w-56 rounded-xl border border-line bg-surface p-1 shadow-lg">
+            <div className="menu-pop absolute end-0 mt-2 w-56 rounded-xl border border-line bg-surface p-1 shadow-lg">
               <p className="truncate px-3 py-2 text-xs text-muted" dir="ltr">{s.user.email}</p>
               <Link href="/account" className="block rounded-lg px-3 py-2 text-sm hover:bg-surface-2">{tr("حسابي وكلمة المرور", "My account")}</Link>
               <button onClick={logout} className="block w-full rounded-lg px-3 py-2 text-start text-sm text-danger hover:bg-surface-2">{tr("تسجيل الخروج", "Sign out")}</button>
@@ -232,7 +240,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           </div>
         )}
 
-        <main className="mx-auto w-full max-w-7xl flex-1 p-4 sm:p-6">{children}</main>
+        {/* key: replays the entrance animation on every page change */}
+        <main key={path} className="app-enter mx-auto w-full max-w-7xl flex-1 p-4 sm:p-6">{children}</main>
       </div>
     </div>
   );

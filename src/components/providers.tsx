@@ -48,7 +48,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       <div className="fixed bottom-4 inset-x-0 z-[100] flex flex-col items-center gap-2 px-4 pointer-events-none" aria-live="polite">
         {items.map((t) => (
           <div key={t.id}
-            className={`pointer-events-auto max-w-md w-full rounded-lg px-4 py-3 text-sm shadow-lg text-white ${t.kind === "success" ? "bg-emerald-600" : "bg-red-600"}`}>
+            className={`toast-in pointer-events-auto max-w-md w-full rounded-lg px-4 py-3 text-sm shadow-lg text-white ${t.kind === "success" ? "bg-emerald-600" : "bg-red-600"}`}>
             {t.text}
           </div>
         ))}

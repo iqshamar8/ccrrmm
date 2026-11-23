@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
 
@@ -15,9 +15,9 @@ export function Button({ variant = "primary", size = "md", loading, className, c
       {...p}
       disabled={disabled || loading}
       className={cx(
-        "inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand",
+        "btn inline-flex items-center justify-center gap-2 rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand",
         size === "sm" ? "h-8 px-3 text-xs" : "h-10 px-4 text-sm",
-        variant === "primary" && "bg-brand text-white hover:brightness-110",
+        variant === "primary" && "btn-primary bg-brand text-white hover:brightness-110",
         variant === "secondary" && "bg-surface border border-line text-ink hover:bg-surface-2",
         variant === "ghost" && "text-ink hover:bg-surface-2",
         variant === "danger" && "bg-danger text-white hover:brightness-110",
@@ -116,7 +116,7 @@ export function LoadingRows({ cols, rows = 4 }: { cols: number; rows?: number })
       {Array.from({ length: rows }).map((_, i) => (
         <tr key={i} className="border-t border-line">
           {Array.from({ length: cols }).map((__, j) => (
-            <td key={j} className="px-4 py-3"><div className="h-4 rounded bg-surface-2 animate-pulse" /></td>
+            <td key={j} className="px-4 py-3"><div className="skeleton h-4 rounded" /></td>
           ))}
         </tr>
       ))}
@@ -132,7 +132,7 @@ export function LoadingBlock({ cols, rows = 4 }: { cols: number; rows?: number }
       {Array.from({ length: rows }).map((_, i) => (
         <div key={i} className="flex gap-4 border-t border-line px-4 py-3 first:border-t-0">
           {Array.from({ length: cols }).map((__, j) => (
-            <div key={j} className="h-4 flex-1 rounded bg-surface-2 animate-pulse" />
+            <div key={j} className="skeleton h-4 flex-1 rounded" />
           ))}
         </div>
       ))}
@@ -156,7 +156,7 @@ export function Table({ head, children }: { head: React.ReactNode[]; children: R
   );
 }
 export const Tr = ({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) => (
-  <tr onClick={onClick} className={cx("border-t border-line", onClick && "cursor-pointer hover:bg-surface-2")}>{children}</tr>
+  <tr onClick={onClick} className={cx("border-t border-line", onClick ? "cursor-pointer hover:bg-surface-2" : "hover:bg-surface-2/50")}>{children}</tr>
 );
 export const Td = ({ children, className, dir }: { children?: React.ReactNode; className?: string; dir?: string }) => (
   <td dir={dir} className={cx("px-4 py-3 align-middle", className)}>{children}</td>
@@ -210,11 +210,34 @@ export function ConfirmModal({ open, onClose, onConfirm, title, text, confirmLab
   );
 }
 
+/** Counts a whole number up from 0 when it first appears (plain numbers only). */
+function CountUp({ value }: { value: number }) {
+  const [n, setN] = useState(value);
+  const started = useRef(false);
+  useEffect(() => {
+    if (started.current || !Number.isFinite(value) || !Number.isInteger(value) || value <= 0) { setN(value); return; }
+    started.current = true;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) { setN(value); return; }
+    let raf = 0;
+    const t0 = performance.now();
+    const dur = Math.min(1200, 500 + value * 4);
+    const tick = (t: number) => {
+      const p = Math.min(1, (t - t0) / dur);
+      setN(Math.round(value * (1 - Math.pow(1 - p, 3))));
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    setN(0);
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [value]);
+  return <>{n}</>;
+}
+
 export function StatCard({ label, value, hint }: { label: string; value: React.ReactNode; hint?: React.ReactNode }) {
   return (
-    <Card className="p-4">
+    <Card className="stat-card p-4">
       <p className="text-xs text-muted">{label}</p>
-      <p className="mt-2 text-2xl font-semibold tabular">{value}</p>
+      <p className="mt-2 text-2xl font-semibold tabular">{typeof value === "number" ? <CountUp value={value} /> : value}</p>
       {hint && <p className="mt-1 text-xs text-muted">{hint}</p>}
     </Card>
   );
