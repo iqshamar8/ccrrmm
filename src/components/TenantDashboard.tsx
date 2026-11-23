@@ -250,14 +250,15 @@ function DashHero({ sub, subOk }: { sub: string | null; subOk: boolean }) {
           // eslint-disable-next-line @next/next/no-img-element
           ? <img src={s.tenant.logoUrl} alt="" className="dash-hero__logo" />
           : <span className="dash-hero__logo dash-hero__logo--initial" aria-hidden="true">{(s.tenant?.name ?? "M").slice(0, 1)}</span>}
-        <div className="min-w-0 flex-1">
-          <h1 id="dash-hello" className="text-2xl font-semibold sm:text-3xl">{hello}، {s.user.fullName}</h1>
+        <div className="min-w-[11rem] flex-1">
+          <h1 id="dash-hello" className="text-xl font-semibold leading-snug sm:text-3xl">{hello}، {s.user.fullName}</h1>
           <p className="dash-hero__meta mt-1.5 text-sm">
             {s.tenant?.name}{plan ? ` · ${plan}` : ""}{today ? ` · ${today}` : ""}
             {sub && <span className={`dash-hero__chip ${subOk ? "" : "dash-hero__chip--warn"}`}>{sub}</span>}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        {/* Phones: the actions take their own full-width row under the greeting */}
+        <div className="flex w-full gap-2 sm:w-auto">
           {can("appointments.create") && <Link href="/appointments" className="dash-hero__btn">{tr("موعد جديد", "New appointment")}</Link>}
           {can("clients.create") && <Link href="/clients" className="dash-hero__btn dash-hero__btn--ghost">{tr("عميل جديد", "New client")}</Link>}
         </div>

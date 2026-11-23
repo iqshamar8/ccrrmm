@@ -158,7 +158,8 @@ tbody tr { transition: background-color 0.15s; }
 .dash-hero { position: relative; overflow: hidden; isolation: isolate; border-radius: 18px; padding: 24px;
   background: var(--brand); color: var(--brand-ink);
   box-shadow: 0 24px 48px -30px color-mix(in srgb, var(--brand) 85%, transparent); }
-@media (min-width: 640px) { .dash-hero { padding: 28px 32px; } }
+@media (min-width: 640px) { .dash-hero { padding: 28px 32px; } .dash-hero__btn { flex: 0 0 auto; } }
+@media (max-width: 639px) { .dash-hero { padding: 20px; } .dash-hero__logo { width: 52px; height: 52px; border-radius: 14px; } }
 .dash-hero__glow { position: absolute; inset: 0; z-index: -1; pointer-events: none;
   background:
     radial-gradient(420px 220px at 88% -10%, color-mix(in srgb, var(--accent) 55%, transparent), transparent 70%),
@@ -177,13 +178,18 @@ tbody tr { transition: background-color 0.15s; }
 .dash-hero__chip { display: inline-flex; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
   background: var(--accent); color: var(--accent-ink); margin-inline-start: 4px; }
 .dash-hero__chip--warn { background: #fbbf24; color: #000; }
-.dash-hero__btn { display: inline-flex; align-items: center; height: 42px; padding-inline: 18px; border-radius: 10px; font-size: 14px; font-weight: 600;
+.dash-hero__btn { display: inline-flex; align-items: center; justify-content: center; flex: 1 1 0; white-space: nowrap; height: 42px; padding-inline: 18px; border-radius: 10px; font-size: 14px; font-weight: 600;
   background: var(--accent); color: var(--accent-ink); transition: transform 0.2s var(--ease-out), box-shadow 0.25s, background-color 0.2s; }
 .dash-hero__btn:hover { transform: translateY(-2px); box-shadow: 0 10px 24px -12px color-mix(in srgb, var(--accent) 90%, transparent); }
 .dash-hero__btn:active { transform: scale(0.97); }
 .dash-hero__btn--ghost { background: color-mix(in srgb, var(--brand-ink) 14%, transparent); color: var(--brand-ink); }
 .dash-hero__btn--ghost:hover { background: color-mix(in srgb, var(--brand-ink) 22%, transparent); box-shadow: none; }
 .dash-hero__btn:focus-visible { outline: 2px solid var(--brand-ink); outline-offset: 2px; }
+
+/* Night mode: text in the clinic colour is lightened so dark brands stay readable
+ * (links, active menu item, badges). Backgrounds keep the real colour. */
+.dark .text-brand { color: color-mix(in srgb, var(--brand) 55%, #ffffff); }
+.dark .nav-link[aria-current="page"]::before { background: color-mix(in srgb, var(--brand) 55%, #ffffff); }
 
 /* Avatar in the top bar wears the accent colour. */
 .avatar-accent { background: var(--accent); color: var(--accent-ink); }
