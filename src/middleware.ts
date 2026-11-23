@@ -13,9 +13,14 @@ export async function middleware(req: NextRequest) {
       ok = true;
     } catch {}
   }
-  const isLogin = req.nextUrl.pathname === "/login";
-  if (!ok && !isLogin) return NextResponse.redirect(new URL("/login", req.url));
-  if (ok && isLogin) return NextResponse.redirect(new URL("/", req.url));
+  const path = req.nextUrl.pathname;
+  const isLogin = path === "/login";
+  const isLanding = path === "/welcome";
+  // Signed-out visitors see the public landing page at "/" (URL stays "/");
+  // signed-in users get their dashboard there.
+  if (!ok && path === "/") return NextResponse.rewrite(new URL("/welcome", req.url));
+  if (!ok && !isLogin && !isLanding) return NextResponse.redirect(new URL("/login", req.url));
+  if (ok && (isLogin || isLanding)) return NextResponse.redirect(new URL("/", req.url));
   return NextResponse.next();
 }
 

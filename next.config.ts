@@ -34,6 +34,8 @@ const securityHeaders = [
 ];
 
 const config: NextConfig = {
+  // Optional separate build folder, so two local servers can run side by side (e.g. NEXT_DIST_DIR=.next-landing).
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   poweredByHeader: false,
   serverExternalPackages: ["@prisma/client", "bcryptjs"],
   async headers() {

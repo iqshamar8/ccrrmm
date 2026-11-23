@@ -11,3 +11,5 @@ uploads/
 scripts/setup-neon.ts
 scripts/test-roles.ts
 .env.vercel
+.next-*
+.taste-skill/
