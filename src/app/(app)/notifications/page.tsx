@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useResource, useSubmit } from "@/components/hooks";
 import { useSession } from "@/components/providers";
-import { Badge, Button, Card, Checkbox, EmptyState, Field, Input, LoadingRows, Modal, PageHeader, Select, StatCard, Table, Td, Tr } from "@/components/ui";
+import { Badge, Button, Card, Checkbox, EmptyState, Field, Input, LoadingBlock, LoadingRows, Modal, PageHeader, Select, StatCard, Table, Td, Tr } from "@/components/ui";
 import Forbidden from "@/components/Forbidden";
 import { CATEGORY, PLACEHOLDERS, STATUS } from "@/components/messaging/labels";
 import { api } from "@/lib/client";
@@ -178,7 +178,7 @@ function SettingsTab() {
   const [f, setF] = useState<(Settings & { accessTokenNew: string; appSecretNew: string }) | null>(null);
   useEffect(() => { if (data) setF({ ...data, accessTokenNew: "", appSecretNew: "" }); }, [data]);
   const { pending, fields, run } = useSubmit();
-  if (!f) return <Card><LoadingRows cols={3} /></Card>;
+  if (!f) return <Card><LoadingBlock cols={3} /></Card>;
   const edit = can("notifications.update");
   const setRule = (k: string, patch: Record<string, number | boolean>) => setF({ ...f, rules: { ...f.rules, [k]: { ...f.rules[k], ...patch } } });
   const hook = typeof window !== "undefined" ? `${window.location.origin}${f.webhookPath}` : f.webhookPath;

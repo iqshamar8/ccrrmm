@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useResource } from "@/components/hooks";
 import { useSession } from "@/components/providers";
-import { Badge, Card, EmptyState, Input, LoadingRows, Modal, PageHeader, Select, Table, Td, Tr } from "@/components/ui";
+import { Badge, Card, EmptyState, Input, LoadingBlock, LoadingRows, Modal, PageHeader, Select, Table, Td, Tr } from "@/components/ui";
 import Forbidden from "@/components/Forbidden";
 import { useMoney } from "@/components/billing/useMoney";
 import { DOC_TYPES, InventoryTabs, useWarehouses } from "@/components/inventory/shared";
@@ -63,7 +63,7 @@ function DocModal({ id, onClose }: { id: string | null; onClose: () => void }) {
   const t = data ? DOC_TYPES[data.type] : null;
   return (
     <Modal open={!!id} onClose={onClose} wide title={data ? `${data.code}` : "…"}>
-      {!data || !t ? <LoadingRows cols={3} /> : <div className="space-y-3">
+      {!data || !t ? <LoadingBlock cols={3} /> : <div className="space-y-3">
         <div className="flex flex-wrap gap-3 text-sm">
           <Badge tone={t[2]}>{tr(t[0], t[1])}</Badge><span className="text-muted">{fmtDate(data.date, locale)}</span>
           {data.journal && <span className="text-muted">{tr("القيد:", "Journal:")} <span dir="ltr" className="font-mono">{data.journal.code}</span></span>}

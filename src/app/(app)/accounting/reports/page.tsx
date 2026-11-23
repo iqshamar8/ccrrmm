@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useResource } from "@/components/hooks";
 import { useSession } from "@/components/providers";
-import { Badge, Button, Card, EmptyState, Input, LoadingRows, PageHeader, Select, StatCard, Table, Td, Tr } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, Input, LoadingBlock, LoadingRows, PageHeader, Select, StatCard, Table, Td, Tr } from "@/components/ui";
 import Forbidden from "@/components/Forbidden";
 import { useMoney } from "@/components/billing/useMoney";
 import { AccountingTabs, accName, LedgerModal, SOURCES } from "@/components/accounting/shared";
@@ -69,7 +69,7 @@ function IncomeReport({ qs, onAccount }: { qs: string; onAccount: (id: string) =
   const { tr } = useSession();
   const money = useMoney();
   const { data, loading } = useResource<Income>(`/api/accounting/reports/income?${qs}&byBranch=1`);
-  if (loading && !data) return <Card><LoadingRows cols={2} /></Card>;
+  if (loading && !data) return <Card><LoadingBlock cols={2} /></Card>;
   if (!data) return null;
   const margin = Number(data.revenue) ? Math.round((Number(data.net) / Number(data.revenue)) * 100) : 0;
   return (
@@ -108,7 +108,7 @@ function IncomeReport({ qs, onAccount }: { qs: string; onAccount: (id: string) =
 function BalanceReport({ asOf, branchId, onAccount }: { asOf: string; branchId: string; onAccount: (id: string) => void }) {
   const { tr } = useSession();
   const { data, loading } = useResource<BS>(`/api/accounting/reports/balance-sheet?asOf=${asOf}&branchId=${branchId}`);
-  if (loading && !data) return <Card><LoadingRows cols={2} /></Card>;
+  if (loading && !data) return <Card><LoadingBlock cols={2} /></Card>;
   if (!data) return null;
   return (
     <div className="space-y-3">
@@ -132,7 +132,7 @@ function CashReport({ qs }: { qs: string }) {
   const { tr } = useSession();
   const money = useMoney();
   const { data, loading } = useResource<CF>(`/api/accounting/reports/cash-flow?${qs}`);
-  if (loading && !data) return <Card><LoadingRows cols={4} /></Card>;
+  if (loading && !data) return <Card><LoadingBlock cols={4} /></Card>;
   if (!data) return null;
   return (
     <Card>
@@ -150,7 +150,7 @@ function TrialReport({ qs, onAccount }: { qs: string; onAccount: (id: string) =>
   const { tr, locale } = useSession();
   const money = useMoney();
   const { data, loading } = useResource<TB>(`/api/accounting/reports/trial-balance?${qs}`);
-  if (loading && !data) return <Card><LoadingRows cols={3} /></Card>;
+  if (loading && !data) return <Card><LoadingBlock cols={3} /></Card>;
   if (!data) return null;
   const ok = Number(data.totals.debit).toFixed(2) === Number(data.totals.credit).toFixed(2);
   return (

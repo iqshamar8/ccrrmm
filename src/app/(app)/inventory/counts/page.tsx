@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useResource, useSubmit } from "@/components/hooks";
 import { useSession } from "@/components/providers";
-import { Badge, Button, Card, ConfirmModal, EmptyState, Input, LoadingRows, Modal, PageHeader, Select, Table, Td, Tr } from "@/components/ui";
+import { Badge, Button, Card, ConfirmModal, EmptyState, Input, LoadingBlock, LoadingRows, Modal, PageHeader, Select, Table, Td, Tr } from "@/components/ui";
 import Forbidden from "@/components/Forbidden";
 import { useMoney } from "@/components/billing/useMoney";
 import { InventoryTabs, useWarehouses } from "@/components/inventory/shared";
@@ -63,7 +63,7 @@ function CountModal({ id, onClose, onChanged }: { id: string | null; onClose: ()
         {can("inventory.update") && <Button variant="secondary" loading={pending} onClick={async () => { if (await save()) { setVals({}); reload(); } }}>{tr("حفظ الكميات", "Save quantities")}</Button>}
         {can("inventory.approve") && <Button loading={pending} onClick={() => setConfirm(true)}>{tr("ترحيل الفروقات", "Post differences")}</Button>}
       </>}>
-      {!data ? <LoadingRows cols={4} /> : <>
+      {!data ? <LoadingBlock cols={4} /> : <>
         <p className="mb-2 text-sm text-muted">{tr("فرق القيمة التقديري:", "Estimated value difference:")} <span className={`tabular font-medium ${diffValue < 0 ? "text-danger" : ""}`}>{money(diffValue)}</span></p>
         <Table head={[tr("الصنف", "Item"), tr("الدفتري", "Book qty"), tr("الفعلي", "Counted"), tr("الفرق", "Difference")]}>
           {data.lines.map((l) => {

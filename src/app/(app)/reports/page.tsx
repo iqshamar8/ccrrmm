@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useResource } from "@/components/hooks";
 import { useSession } from "@/components/providers";
-import { Button, Card, EmptyState, Input, LoadingRows, PageHeader, Select, StatCard, Table, Td, Tr } from "@/components/ui";
+import { Button, Card, EmptyState, Input, LoadingBlock, PageHeader, Select, StatCard, Table, Td, Tr } from "@/components/ui";
 import Forbidden from "@/components/Forbidden";
 import { BarChart, LineChart } from "@/components/charts";
 import { fmtDate, fmtMoney } from "@/lib/i18n";
@@ -59,7 +59,7 @@ export default function ReportsPage() {
       </div>
       <div className="grid gap-4 lg:grid-cols-[16rem_1fr]">
         <Card className="hidden h-fit p-2 lg:block print:hidden">
-          {list.loading && !list.data ? <LoadingRows cols={1} /> : GROUPS.map(([g, ar, en]) => {
+          {list.loading && !list.data ? <LoadingBlock cols={1} /> : GROUPS.map(([g, ar, en]) => {
             const items = (list.data ?? []).filter((m) => m.group === g);
             if (!items.length) return null;
             return (
@@ -87,7 +87,7 @@ export default function ReportsPage() {
             {can("reports.print") && <Button size="sm" variant="secondary" onClick={() => window.print()}>{tr("طباعة / PDF", "Print / PDF")}</Button>}
           </Card>}
           {!meta && !list.loading && <EmptyState title={tr("لا توجد تقارير متاحة لصلاحياتك", "No reports available for your role")} />}
-          {meta && (report.loading && !r ? <Card><LoadingRows cols={5} /></Card> : report.error ? <Card className="p-6 text-danger">{report.error}</Card> : r && <ReportView r={r} fmt={fmt} />)}
+          {meta && (report.loading && !r ? <Card><LoadingBlock cols={5} /></Card> : report.error ? <Card className="p-6 text-danger">{report.error}</Card> : r && <ReportView r={r} fmt={fmt} />)}
         </div>
       </div>
     </>

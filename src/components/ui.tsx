@@ -124,6 +124,22 @@ export function LoadingRows({ cols, rows = 4 }: { cols: number; rows?: number })
   );
 }
 
+/** Same skeleton as LoadingRows but built from <div>s, for use OUTSIDE a <table>
+ *  (a bare <tr> in a <div> is invalid HTML and breaks hydration). */
+export function LoadingBlock({ cols, rows = 4 }: { cols: number; rows?: number }) {
+  return (
+    <div aria-busy="true">
+      {Array.from({ length: rows }).map((_, i) => (
+        <div key={i} className="flex gap-4 border-t border-line px-4 py-3 first:border-t-0">
+          {Array.from({ length: cols }).map((__, j) => (
+            <div key={j} className="h-4 flex-1 rounded bg-surface-2 animate-pulse" />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ----------------------------------------------------------------- Table ----
 export function Table({ head, children }: { head: React.ReactNode[]; children: React.ReactNode }) {
   return (

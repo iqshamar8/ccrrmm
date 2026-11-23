@@ -3,7 +3,7 @@ import Link from "next/link";
 import { use, useState } from "react";
 import { useResource, useSubmit } from "@/components/hooks";
 import { useSession } from "@/components/providers";
-import { Badge, Button, Card, Checkbox, ConfirmModal, EmptyState, Field, Input, LoadingRows, Modal, PageHeader, Select, StatCard, Table, Td, Tr } from "@/components/ui";
+import { Badge, Button, Card, Checkbox, ConfirmModal, EmptyState, Field, Input, LoadingBlock, Modal, PageHeader, Select, StatCard, Table, Td, Tr } from "@/components/ui";
 import Forbidden from "@/components/Forbidden";
 import ClientPicker, { type PickedClient } from "@/components/clients/ClientPicker";
 import { useMoney } from "@/components/billing/useMoney";
@@ -27,7 +27,7 @@ export default function CompanyPage({ params }: { params: Promise<{ id: string }
   const [editCo, setEditCo] = useState(false);
   const { pending, run } = useSubmit();
   if (!can("corporate.view")) return <Forbidden />;
-  if (loading && !data) return <Card><LoadingRows cols={4} /></Card>;
+  if (loading && !data) return <Card><LoadingBlock cols={4} /></Card>;
   if (!data) return null;
   const today = new Date().toISOString().slice(0, 10);
   const status = (a: Agreement) => (!a.isActive ? ["gray", tr("موقوفة", "Paused")] : a.endDate.slice(0, 10) < today ? ["red", tr("منتهية", "Expired")] : a.startDate.slice(0, 10) > today ? ["blue", tr("قادمة", "Upcoming")] : ["green", tr("سارية", "Active")]) as ["gray" | "red" | "blue" | "green", string];

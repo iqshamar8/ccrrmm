@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useResource, useSubmit } from "@/components/hooks";
 import { useSession } from "@/components/providers";
-import { Badge, Button, Card, EmptyState, Field, Input, LoadingRows, Modal, PageHeader, Select, StatCard, Table, Td, Tr } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, Field, Input, LoadingBlock, LoadingRows, Modal, PageHeader, Select, StatCard, Table, Td, Tr } from "@/components/ui";
 import Forbidden from "@/components/Forbidden";
 import { useMoney } from "@/components/billing/useMoney";
 import { DOC_TYPES, InventoryTabs, LineEditor, type Line, type Supplier, toLines, useItems, useWarehouses } from "@/components/inventory/shared";
@@ -175,7 +175,7 @@ function ItemCard({ id, onClose }: { id: string | null; onClose: () => void }) {
   const { data } = useResource<CardData>(id ? `/api/inventory/items/${id}` : null);
   return (
     <Modal open={!!id} onClose={onClose} wide title={data?.item.name ?? tr("بطاقة صنف", "Item card")}>
-      {!data ? <LoadingRows cols={3} /> : <div className="space-y-4">
+      {!data ? <LoadingBlock cols={3} /> : <div className="space-y-4">
         <div>
           <div className="mb-1 text-sm font-medium">{tr("التشغيلات المتاحة (ترتيب الصرف)", "Available lots (issue order)")}</div>
           <Table head={[tr("التشغيلة", "Lot"), tr("المخزن", "Warehouse"), tr("الانتهاء", "Expiry"), tr("الكمية", "Qty"), tr("التكلفة", "Cost")]}>

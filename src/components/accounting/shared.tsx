@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useResource } from "@/components/hooks";
 import { useSession } from "@/components/providers";
-import { Badge, LoadingRows, Modal, Table, Td, Tr } from "@/components/ui";
+import { Badge, LoadingBlock, Modal, Table, Td, Tr } from "@/components/ui";
 import { useMoney } from "@/components/billing/useMoney";
 import { fmtDate } from "@/lib/i18n";
 
@@ -58,7 +58,7 @@ export function LedgerModal({ id, onClose, from, to }: { id: string | null; onCl
   const { data } = useResource<Ledger>(id ? `/api/accounting/accounts/${id}?from=${from ?? ""}&to=${to ?? ""}` : null);
   return (
     <Modal open={!!id} onClose={onClose} wide title={data ? `${data.account.code} — ${accName(data.account, locale)}` : tr("كشف حساب", "Account ledger")}>
-      {!data ? <LoadingRows cols={5} /> : <>
+      {!data ? <LoadingBlock cols={5} /> : <>
         <div className="mb-2 flex gap-4 text-sm"><span>{tr("رصيد أول المدة", "Opening")}: <b className="tabular">{money(data.opening)}</b></span><span>{tr("الرصيد الختامي", "Closing")}: <b className="tabular">{money(data.closing)}</b></span></div>
         <Table head={[tr("التاريخ", "Date"), tr("القيد", "Entry"), tr("البيان", "Description"), tr("مدين", "Debit"), tr("دائن", "Credit"), tr("الرصيد", "Balance")]}>
           {data.rows.slice(-500).reverse().map((r) => (

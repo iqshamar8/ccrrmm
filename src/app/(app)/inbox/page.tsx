@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { useResource } from "@/components/hooks";
 import { useSession } from "@/components/providers";
-import { Button, Card, EmptyState, LoadingRows, PageHeader } from "@/components/ui";
+import { Button, Card, EmptyState, LoadingBlock, PageHeader } from "@/components/ui";
 import { api } from "@/lib/client";
 import { fmtDate } from "@/lib/i18n";
 
@@ -20,7 +20,7 @@ export default function InboxPage() {
         actions={!!data?.unread && <Button variant="secondary" onClick={() => read()}>{tr("تحديد الكل كمقروء", "Mark all read")}</Button>} />
       <label className="mb-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={unread} onChange={(e) => setUnread(e.target.checked)} />{tr("غير المقروءة فقط", "Unread only")} ({data?.unread ?? 0})</label>
       <Card>
-        {loading && !data ? <div className="p-4"><LoadingRows cols={2} /></div> : (
+        {loading && !data ? <div className="p-4"><LoadingBlock cols={2} /></div> : (
           <ul>{(data?.items ?? []).map((n) => (
             <li key={n.id} className={`flex items-start gap-3 border-b border-line px-4 py-3 last:border-0 ${n.readAt ? "" : "bg-brand/5"}`}>
               <span className={`mt-1.5 size-2 shrink-0 rounded-full ${n.readAt ? "bg-transparent" : "bg-brand"}`} />
