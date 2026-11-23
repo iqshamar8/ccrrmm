@@ -225,7 +225,7 @@ function ServiceModal({ svc, categories, defaultCategory, onClose, onSaved }: { 
           </div>
         )}
         <div className="sm:col-span-4"><Checkbox label={tr("الخدمة مفعّلة ومتاحة للحجز", "Active and bookable")} checked={f.isActive} onChange={(e) => setF({ ...f, isActive: e.target.checked })} /></div>
-        {!isNew && can("inventory.view") && <ServiceMaterials serviceId={(svc as Svc).id} />}
+        {svc && svc !== "new" && can("inventory.view") && <ServiceMaterials serviceId={svc.id} />}
       </form>
     </Modal>
   );
