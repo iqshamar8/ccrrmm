@@ -103,7 +103,7 @@ export default function TenantDetailPage({ params }: { params: Promise<{ id: str
           <div className="border-b border-line px-4 py-3 font-medium">{tr("سجل نشاط المؤسسة", "Organization activity")}</div>
           <Table head={[tr("العملية", "Action"), tr("المستخدم", "User"), tr("الوقت", "Time")]}>
             {audit.data?.map((r) => (
-              <Tr key={r.id}><Td>{actionLabel(r.action, locale)}</Td><Td dir="ltr" className="text-muted">{r.userEmail ?? "system"}</Td><Td className="text-muted">{fmtDate(r.createdAt, locale, true)}</Td></Tr>
+              <Tr key={r.id}><Td>{actionLabel(r.action, locale)}</Td><Td dir="ltr" className="text-muted">{r.userEmail ?? tr("النظام", "System")}</Td><Td className="text-muted">{fmtDate(r.createdAt, locale, true)}</Td></Tr>
             ))}
           </Table>
         </Card>
