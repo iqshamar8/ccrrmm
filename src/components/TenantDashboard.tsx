@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useResource } from "@/components/hooks";
 import { useSession } from "@/components/providers";
 import { Badge, Card, Select, Spinner, StatCard, Table, Td, Tr } from "@/components/ui";
@@ -101,12 +101,9 @@ export default function TenantDashboard() {
 
   return (
     <>
-      <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">{tr("مرحباً", "Welcome")}، {s.user.fullName}</h1>
-          <p className="mt-1 text-sm text-muted">{s.tenant?.name} · {locale === "ar" ? s.tenant?.plan?.nameAr : s.tenant?.plan?.nameEn}
-            {sub && <> · <Badge tone={sub.status === "ACTIVE" ? "green" : "amber"}>{subStatusLabel(sub.status, locale)}</Badge></>}</p>
-        </div>
+      <DashHero sub={sub ? subStatusLabel(sub.status, locale) : null} subOk={sub?.status === "ACTIVE"} />
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-base font-semibold">{tr("نظرة عامة", "Overview")}</h2>
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex rounded-lg border border-line bg-surface p-0.5">
             {PRESETS.map((p) => (
@@ -228,5 +225,43 @@ export default function TenantDashboard() {
         </div>
       )}
     </>
+  );
+}
+
+/** Branded welcome banner in the clinic's own colours (logo, greeting, quick actions). */
+function DashHero({ sub, subOk }: { sub: string | null; subOk: boolean }) {
+  const s = useSession();
+  const { tr, can, locale } = s;
+  // Time-of-day greeting and today's date are set after mount, so the server's
+  // clock (UTC) never disagrees with the visitor's and breaks hydration.
+  const [hello, setHello] = useState(tr("مرحباً", "Welcome"));
+  const [today, setToday] = useState("");
+  useEffect(() => {
+    const h = new Date().getHours();
+    setHello(h < 12 ? tr("صباح الخير", "Good morning") : h < 18 ? tr("نهارك سعيد", "Good afternoon") : tr("مساء الخير", "Good evening"));
+    setToday(new Intl.DateTimeFormat(locale === "ar" ? "ar-IQ-u-nu-latn" : "en-GB", { weekday: "long", day: "numeric", month: "long" }).format(new Date()));
+  }, [tr, locale]);
+  const plan = locale === "ar" ? s.tenant?.plan?.nameAr : s.tenant?.plan?.nameEn;
+  return (
+    <section className="dash-hero mb-6" aria-labelledby="dash-hello">
+      <div className="dash-hero__glow" aria-hidden="true" />
+      <div className="relative flex flex-wrap items-center gap-4">
+        {s.tenant?.logoUrl
+          // eslint-disable-next-line @next/next/no-img-element
+          ? <img src={s.tenant.logoUrl} alt="" className="dash-hero__logo" />
+          : <span className="dash-hero__logo dash-hero__logo--initial" aria-hidden="true">{(s.tenant?.name ?? "M").slice(0, 1)}</span>}
+        <div className="min-w-0 flex-1">
+          <h1 id="dash-hello" className="text-2xl font-semibold sm:text-3xl">{hello}، {s.user.fullName}</h1>
+          <p className="dash-hero__meta mt-1.5 text-sm">
+            {s.tenant?.name}{plan ? ` · ${plan}` : ""}{today ? ` · ${today}` : ""}
+            {sub && <span className={`dash-hero__chip ${subOk ? "" : "dash-hero__chip--warn"}`}>{sub}</span>}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {can("appointments.create") && <Link href="/appointments" className="dash-hero__btn">{tr("موعد جديد", "New appointment")}</Link>}
+          {can("clients.create") && <Link href="/clients" className="dash-hero__btn dash-hero__btn--ghost">{tr("عميل جديد", "New client")}</Link>}
+        </div>
+      </div>
+    </section>
   );
 }

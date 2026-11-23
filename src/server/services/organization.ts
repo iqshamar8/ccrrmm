@@ -4,11 +4,13 @@ import { audit } from "../audit";
 import { type Ctx, requireTenant } from "../context";
 import { withTenant } from "../db";
 import { notFound } from "../errors";
+import { brandingForAudit, colourField, logoField } from "@/lib/branding";
 
 export const orgSettingsSchema = z.object({
   name: z.string().trim().min(2).max(120),
-  logoUrl: z.string().trim().url().max(500).optional().nullable().or(z.literal("").transform(() => null)),
-  primaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Use a hex colour like #0f766e"),
+  logoUrl: logoField,
+  primaryColor: colourField,
+  accentColor: colourField,
   timezone: z.string().trim().max(60),
   defaultLocale: z.enum(["ar", "en"]),
   contactEmail: z.string().trim().toLowerCase().email().optional().nullable().or(z.literal("").transform(() => null)),
@@ -34,7 +36,7 @@ export async function updateOrganization(ctx: Ctx, raw: unknown) {
     if (!before) throw notFound();
     // crm_app has column-level UPDATE grants only on these fields (see 0002_rls)
     const after = await tx.tenant.update({ where: { id: tenantId }, data });
-    await audit(tx, ctx, { action: "organization.update", entity: "Tenant", entityId: tenantId, before, after });
+    await audit(tx, ctx, { action: "organization.update", entity: "Tenant", entityId: tenantId, before: brandingForAudit(before), after: brandingForAudit(after) });
     return after;
   });
 }

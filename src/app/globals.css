@@ -59,6 +59,9 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
  * Transform/opacity only; everything is switched off for reduced motion.
  * ===================================================================== */
 :root {
+  --accent: #dcf36b;      /* clinic's second colour (overridden per clinic) */
+  --accent-ink: #000000;  /* readable text on --accent */
+  --brand-ink: #ffffff;   /* readable text on --brand */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --lime: #dcf36b;
@@ -91,7 +94,7 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
 
 /* Stat cards: a brand accent line that grows on hover, slight lift. */
 .stat-card { position: relative; overflow: hidden; transition: transform 0.3s var(--ease-out), border-color 0.3s, box-shadow 0.3s; }
-.stat-card::before { content: ""; position: absolute; inset-inline: 0; top: 0; height: 3px; background: var(--brand);
+.stat-card::before { content: ""; position: absolute; inset-inline: 0; top: 0; height: 3px; background: linear-gradient(90deg, var(--brand), var(--accent));
   transform: scaleX(0.18); transform-origin: var(--accent-origin, left); opacity: 0.85; transition: transform 0.45s var(--ease-out); }
 [dir="rtl"] .stat-card::before { --accent-origin: right; }
 .stat-card:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--brand) 35%, var(--border));
@@ -107,7 +110,7 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
 .nav-link:hover svg { transform: scale(1.12); }
 .brand-mark { box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 18%, transparent); transition: transform 0.3s var(--ease-spring); }
 .brand-mark:hover { transform: rotate(-6deg) scale(1.05); }
-.sidebar-head { background: linear-gradient(180deg, color-mix(in srgb, var(--brand) 9%, transparent), transparent); }
+.sidebar-head { background: linear-gradient(180deg, color-mix(in srgb, var(--brand) 10%, transparent), color-mix(in srgb, var(--accent) 6%, transparent) 70%, transparent); }
 
 /* Top bar gains a soft edge once the page scrolls under it. */
 .app-topbar { transition: box-shadow 0.25s, background-color 0.25s; }
@@ -150,6 +153,40 @@ li:nth-child(4) > div > .rank-fill { animation-delay: 180ms; } li:nth-child(n + 
 tbody tr { transition: background-color 0.15s; }
 
 .toast-in { animation: app-toast 0.35s var(--ease-spring) both; }
+
+/* Dashboard welcome banner in the clinic's colours. */
+.dash-hero { position: relative; overflow: hidden; isolation: isolate; border-radius: 18px; padding: 24px;
+  background: var(--brand); color: var(--brand-ink);
+  box-shadow: 0 24px 48px -30px color-mix(in srgb, var(--brand) 85%, transparent); }
+@media (min-width: 640px) { .dash-hero { padding: 28px 32px; } }
+.dash-hero__glow { position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(420px 220px at 88% -10%, color-mix(in srgb, var(--accent) 55%, transparent), transparent 70%),
+    radial-gradient(360px 260px at 0% 120%, color-mix(in srgb, #ffffff 18%, transparent), transparent 70%);
+  animation: dash-glow 12s ease-in-out infinite alternate; }
+[dir="rtl"] .dash-hero__glow { transform: scaleX(-1); }
+@keyframes dash-glow { from { opacity: 0.75; filter: hue-rotate(0deg); } to { opacity: 1; filter: hue-rotate(-12deg); } }
+.dash-hero::after { content: ""; position: absolute; inset: 0; z-index: -1; opacity: 0.12; pointer-events: none;
+  background-image: radial-gradient(currentColor 1px, transparent 1.2px); background-size: 18px 18px;
+  mask-image: linear-gradient(90deg, transparent, #000 60%); }
+[dir="rtl"] .dash-hero::after { mask-image: linear-gradient(270deg, transparent, #000 60%); }
+.dash-hero__logo { width: 60px; height: 60px; border-radius: 16px; object-fit: cover; flex-shrink: 0; background: #fff;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand-ink) 18%, transparent); animation: app-pop 0.6s var(--ease-spring) both; }
+.dash-hero__logo--initial { display: grid; place-items: center; font-size: 26px; font-weight: 700; background: var(--accent); color: var(--accent-ink); }
+.dash-hero__meta { opacity: 0.85; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.dash-hero__chip { display: inline-flex; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
+  background: var(--accent); color: var(--accent-ink); margin-inline-start: 4px; }
+.dash-hero__chip--warn { background: #fbbf24; color: #000; }
+.dash-hero__btn { display: inline-flex; align-items: center; height: 42px; padding-inline: 18px; border-radius: 10px; font-size: 14px; font-weight: 600;
+  background: var(--accent); color: var(--accent-ink); transition: transform 0.2s var(--ease-out), box-shadow 0.25s, background-color 0.2s; }
+.dash-hero__btn:hover { transform: translateY(-2px); box-shadow: 0 10px 24px -12px color-mix(in srgb, var(--accent) 90%, transparent); }
+.dash-hero__btn:active { transform: scale(0.97); }
+.dash-hero__btn--ghost { background: color-mix(in srgb, var(--brand-ink) 14%, transparent); color: var(--brand-ink); }
+.dash-hero__btn--ghost:hover { background: color-mix(in srgb, var(--brand-ink) 22%, transparent); box-shadow: none; }
+.dash-hero__btn:focus-visible { outline: 2px solid var(--brand-ink); outline-offset: 2px; }
+
+/* Avatar in the top bar wears the accent colour. */
+.avatar-accent { background: var(--accent); color: var(--accent-ink); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }

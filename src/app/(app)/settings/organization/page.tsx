@@ -4,12 +4,13 @@ import { useResource, useSubmit } from "@/components/hooks";
 import { useSession } from "@/components/providers";
 import { Badge, Button, Card, Field, Input, PageHeader, Select, Spinner } from "@/components/ui";
 import Forbidden from "@/components/Forbidden";
+import { BrandingEditor } from "@/components/BrandingEditor";
 import { api } from "@/lib/client";
 import { fmtDate } from "@/lib/i18n";
 import { cycleLabel, subStatusLabel, tenantTypeLabel } from "@/lib/labels";
 
 type Org = {
-  name: string; slug: string; type: string; logoUrl: string | null; primaryColor: string; timezone: string; defaultLocale: string;
+  name: string; slug: string; type: string; logoUrl: string | null; primaryColor: string; accentColor: string; timezone: string; defaultLocale: string;
   baseCurrency: string; contactEmail: string | null; contactPhone: string | null; address: string | null;
   subscription: null | { status: string; billingCycle: string; endsAt: string | null; trialEndsAt: string | null; plan: { nameAr: string; nameEn: string; maxUsers: number; maxBranches: number; storageMb: number } };
 };
@@ -18,9 +19,9 @@ export default function OrganizationPage() {
   const { tr, locale, can } = useSession();
   const { data, loading } = useResource<Org>(can("settings.view") ? "/api/organization" : null);
   const { pending, fields, run } = useSubmit();
-  const [f, setF] = useState({ name: "", logoUrl: "", primaryColor: "#0f766e", timezone: "", defaultLocale: "ar", contactEmail: "", contactPhone: "", address: "" });
+  const [f, setF] = useState({ name: "", logoUrl: "", primaryColor: "#0f766e", accentColor: "#dcf36b", timezone: "", defaultLocale: "ar", contactEmail: "", contactPhone: "", address: "" });
   useEffect(() => {
-    if (data) setF({ name: data.name, logoUrl: data.logoUrl ?? "", primaryColor: data.primaryColor, timezone: data.timezone, defaultLocale: data.defaultLocale,
+    if (data) setF({ name: data.name, logoUrl: data.logoUrl ?? "", primaryColor: data.primaryColor, accentColor: data.accentColor ?? "#dcf36b", timezone: data.timezone, defaultLocale: data.defaultLocale,
       contactEmail: data.contactEmail ?? "", contactPhone: data.contactPhone ?? "", address: data.address ?? "" });
   }, [data]);
   if (!can("settings.view")) return <Forbidden />;
@@ -28,8 +29,8 @@ export default function OrganizationPage() {
   const editable = can("settings.update");
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF((x) => ({ ...x, [k]: e.target.value }));
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
+  async function submit(e?: React.FormEvent | React.MouseEvent) {
+    e?.preventDefault();
     // reload so the new brand colour / name apply across the shell
     if (await run(() => api("/api/organization", { method: "PATCH", body: f }), tr("تم حفظ الإعدادات", "Settings saved"))) setTimeout(() => window.location.reload(), 600);
   }
@@ -38,19 +39,21 @@ export default function OrganizationPage() {
   return (
     <>
       <PageHeader title={tr("إعدادات المؤسسة", "Organization settings")} subtitle={`${tenantTypeLabel(data.type, locale)} · ${data.slug}`} />
+      <Card className="mb-4 p-5">
+        <div className="mb-4">
+          <h2 className="font-semibold">{tr("الهوية البصرية", "Branding")}</h2>
+          <p className="mt-1 text-sm text-muted">{tr("شعار العيادة وألوانها تظهر لكل الفريق في القائمة ولوحة التحكم والفواتير.", "Your logo and colours show for the whole team in the menu, dashboard and invoices.")}</p>
+        </div>
+        <BrandingEditor name={f.name} disabled={!editable}
+          value={{ logoUrl: f.logoUrl, primaryColor: f.primaryColor, accentColor: f.accentColor }}
+          onChange={(b) => setF((x) => ({ ...x, ...b }))} />
+        {(fields.logoUrl || fields.primaryColor || fields.accentColor) && <p role="alert" className="mt-3 text-sm text-danger">{fields.logoUrl || fields.primaryColor || fields.accentColor}</p>}
+        {editable && <div className="mt-5"><Button onClick={(e) => submit(e)} loading={pending}>{tr("حفظ الهوية", "Save branding")}</Button></div>}
+      </Card>
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="p-5 lg:col-span-2">
           <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
             <Field label={tr("اسم المؤسسة", "Name")} error={fields.name} className="sm:col-span-2"><Input disabled={!editable} required value={f.name} onChange={set("name")} /></Field>
-            <Field label={tr("رابط الشعار", "Logo URL")} error={fields.logoUrl} hint={tr("رابط صورة https (رفع الملفات في مرحلة لاحقة)", "https image URL (file upload comes later)")}>
-              <Input disabled={!editable} dir="ltr" value={f.logoUrl} onChange={set("logoUrl")} />
-            </Field>
-            <Field label={tr("اللون الأساسي", "Brand colour")} error={fields.primaryColor}>
-              <div className="flex gap-2">
-                <input type="color" disabled={!editable} value={f.primaryColor} onChange={set("primaryColor")} className="h-10 w-14 rounded-lg border border-line bg-surface" />
-                <Input disabled={!editable} dir="ltr" value={f.primaryColor} onChange={set("primaryColor")} />
-              </div>
-            </Field>
             <Field label={tr("المنطقة الزمنية", "Timezone")}><Input disabled={!editable} dir="ltr" value={f.timezone} onChange={set("timezone")} /></Field>
             <Field label={tr("اللغة الافتراضية", "Default language")}>
               <Select disabled={!editable} value={f.defaultLocale} onChange={set("defaultLocale")}><option value="ar">العربية</option><option value="en">English</option></Select>

@@ -5,6 +5,8 @@ import { useResource, useSubmit } from "@/components/hooks";
 import { useSession } from "@/components/providers";
 import { Badge, Button, Card, ConfirmModal, Field, Input, Modal, PageHeader, Select, Spinner, Table, Td, Tr } from "@/components/ui";
 import Forbidden from "@/components/Forbidden";
+import { BrandingEditor } from "@/components/BrandingEditor";
+import { HEX } from "@/lib/branding";
 import { api } from "@/lib/client";
 import { fmtDate } from "@/lib/i18n";
 import { actionLabel, cycleLabel, subStatusLabel, TENANT_STATUS, tenantTypeLabel } from "@/lib/labels";
@@ -14,6 +16,7 @@ import type { PlanRow } from "@/lib/types";
 type TenantDetail = {
   id: string; name: string; slug: string; type: string; status: string; baseCurrency: string; timezone: string;
   contactEmail: string | null; contactPhone: string | null; address: string | null; createdAt: string; storageUsedMb: number;
+  logoUrl: string | null; primaryColor: string; accentColor: string;
   _count: { users: number; branches: number; roles: number };
   subscriptions: { id: string; status: string; billingCycle: string; startsAt: string; endsAt: string | null; trialEndsAt: string | null; plan: { nameAr: string; nameEn: string; storageMb: number; maxUsers: number; maxBranches: number } }[];
   branches: { id: string; name: string; code: string; isMain: boolean; isActive: boolean }[];
@@ -74,6 +77,8 @@ export default function TenantDetailPage({ params }: { params: Promise<{ id: str
         <Card className="p-4"><p className="text-xs text-muted">{tr("التخزين", "Storage")}</p>
           <p className="mt-1 font-semibold tabular">{t.storageUsedMb} MB / {sub?.plan.storageMb ?? 0} MB</p></Card>
       </div>
+
+      <TenantBrandingCard t={t} onSaved={() => { reload(); audit.reload(); }} />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
@@ -179,5 +184,35 @@ function ChangePlanModal({ open, tenantId, onClose, onSaved }: { open: boolean; 
         </Field>
       </form>
     </Modal>
+  );
+}
+
+/** Platform admin sets a clinic's logo and colours (applies to all its users on next page load). */
+function TenantBrandingCard({ t, onSaved }: { t: TenantDetail; onSaved: () => void }) {
+  const { tr } = useSession();
+  const { pending, fields, run } = useSubmit();
+  const initial = { logoUrl: t.logoUrl ?? "", primaryColor: t.primaryColor, accentColor: t.accentColor };
+  const [b, setB] = useState(initial);
+  useEffect(() => { setB({ logoUrl: t.logoUrl ?? "", primaryColor: t.primaryColor, accentColor: t.accentColor }); }, [t.logoUrl, t.primaryColor, t.accentColor]);
+  const dirty = b.logoUrl !== initial.logoUrl || b.primaryColor !== initial.primaryColor || b.accentColor !== initial.accentColor;
+  const valid = HEX.test(b.primaryColor) && HEX.test(b.accentColor);
+  async function save() {
+    if (await run(() => api(`/api/platform/tenants/${t.id}`, { method: "PATCH", body: b }), tr("تم حفظ هوية العيادة", "Clinic branding saved"))) onSaved();
+  }
+  return (
+    <Card className="mb-6 p-5">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="font-semibold">{tr("الهوية البصرية للعيادة", "Clinic branding")}</h2>
+          <p className="mt-1 text-sm text-muted">{tr("الشعار والألوان تظهر لكل مستخدمي هذه العيادة في القائمة ولوحة التحكم والفواتير.", "The logo and colours show for every user of this clinic in the menu, dashboard and invoices.")}</p>
+        </div>
+        <div className="flex gap-2">
+          {dirty && <Button variant="ghost" onClick={() => setB(initial)}>{tr("تراجع", "Undo")}</Button>}
+          <Button loading={pending} disabled={!dirty || !valid} onClick={save}>{tr("حفظ الهوية", "Save branding")}</Button>
+        </div>
+      </div>
+      <BrandingEditor name={t.name} value={b} onChange={setB} />
+      {(fields.logoUrl || fields.primaryColor || fields.accentColor) && <p role="alert" className="mt-3 text-sm text-danger">{fields.logoUrl || fields.primaryColor || fields.accentColor}</p>}
+    </Card>
   );
 }

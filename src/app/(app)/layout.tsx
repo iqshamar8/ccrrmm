@@ -4,6 +4,7 @@ import { getCtx } from "@/server/api";
 import { isLocale } from "@/lib/i18n";
 import { SessionProvider, ToastProvider, type SessionInfo } from "@/components/providers";
 import Shell from "@/components/Shell";
+import { HEX, inkOn } from "@/lib/branding";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       roleName: ctx.user.roleName, roleKey: ctx.user.roleKey,
     },
     tenant: t && {
-      id: t.id, name: t.name, slug: t.slug, type: t.type, primaryColor: t.primaryColor, logoUrl: t.logoUrl,
+      id: t.id, name: t.name, slug: t.slug, type: t.type, primaryColor: t.primaryColor, accentColor: t.accentColor, logoUrl: t.logoUrl,
       baseCurrency: t.baseCurrency, access: t.access, plan: t.plan,
       subscription: t.subscription && {
         status: t.subscription.status,
@@ -36,8 +37,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <SessionProvider value={session}>
       <ToastProvider>
-        {/* Tenant branding: primary colour drives every --brand token */}
-        {t && /^#[0-9a-f]{6}$/i.test(t.primaryColor) && <style>{`:root{--brand:${t.primaryColor}}`}</style>}
+        {/* Tenant branding: the clinic's two colours drive --brand and --accent everywhere */}
+        {t && <style>{`:root{${HEX.test(t.primaryColor) ? `--brand:${t.primaryColor};--brand-ink:${inkOn(t.primaryColor)};` : ""}${HEX.test(t.accentColor) ? `--accent:${t.accentColor};--accent-ink:${inkOn(t.accentColor)};` : ""}}`}</style>}
         <Shell>{children}</Shell>
       </ToastProvider>
     </SessionProvider>

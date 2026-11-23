@@ -97,6 +97,8 @@ model Tenant {
   status        TenantStatus @default(TRIAL)
   logoUrl       String?
   primaryColor  String       @default("#0f766e")
+  /// Second brand colour (highlights, indicators). Logo may be an https URL or a small data:image URL.
+  accentColor   String       @default("#dcf36b")
   baseCurrency  String       @default("USD") @db.VarChar(3)
   timezone      String       @default("Asia/Baghdad")
   defaultLocale String       @default("ar")

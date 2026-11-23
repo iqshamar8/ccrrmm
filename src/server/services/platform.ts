@@ -4,6 +4,7 @@
  * Uses withPlatform (BYPASSRLS) because it operates across tenants.
  */
 import { z } from "zod";
+import { brandingForAudit, colourField, logoField } from "@/lib/branding";
 import { Prisma } from "@prisma/client";
 import { DEFAULT_ROLES, OPTIONAL_MODULES } from "@/lib/permissions";
 import { hashPassword, passwordProblem } from "../auth";
@@ -51,6 +52,9 @@ export const updateTenantSchema = z.object({
   contactEmail: z.string().trim().toLowerCase().email().optional().nullable().or(z.literal("").transform(() => null)),
   contactPhone: optStr(40),
   address: optStr(300),
+  logoUrl: logoField,
+  primaryColor: colourField.optional(),
+  accentColor: colourField.optional(),
 });
 
 export const changePlanSchema = z.object({
@@ -221,7 +225,7 @@ export async function updateTenant(ctx: Ctx | null, id: string, raw: unknown) {
     }
     await audit(tx, actor, {
       tenantId: id, action: data.status && data.status !== before.status ? `tenant.status.${data.status.toLowerCase()}` : "tenant.update",
-      entity: "Tenant", entityId: id, before, after,
+      entity: "Tenant", entityId: id, before: brandingForAudit(before), after: brandingForAudit(after),
     });
     return after;
   });

@@ -6,7 +6,7 @@ export type SessionInfo = {
   locale: Locale;
   user: { id: string; email: string; fullName: string; isPlatformAdmin: boolean; roleName: string | null; roleKey: string | null };
   tenant: null | {
-    id: string; name: string; slug: string; type: string; primaryColor: string; logoUrl: string | null; baseCurrency: string;
+    id: string; name: string; slug: string; type: string; primaryColor: string; accentColor: string; logoUrl: string | null; baseCurrency: string;
     access: string; plan: null | { nameAr: string; nameEn: string; maxUsers: number; maxBranches: number };
     subscription: null | { status: string; endsAt: string | null; trialEndsAt: string | null };
   };

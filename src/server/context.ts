@@ -28,6 +28,7 @@ export type Ctx = {
     type: string;
     status: string;
     primaryColor: string;
+    accentColor: string;
     logoUrl: string | null;
     baseCurrency: string;
     access: TenantAccess;
@@ -110,6 +111,7 @@ export async function loadContext(
       type: t.type,
       status: t.status,
       primaryColor: t.primaryColor,
+      accentColor: t.accentColor,
       logoUrl: t.logoUrl,
       baseCurrency: t.baseCurrency,
       access,
