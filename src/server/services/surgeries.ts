@@ -11,7 +11,7 @@ import { audit } from "../audit";
 import { type Ctx, requireTenant } from "../context";
 import { type Tx, withTenant } from "../db";
 import { badRequest, conflict, forbidden, notFound } from "../errors";
-import { conflictError, findConflicts, markClientVisited } from "./appointments";
+import { conflictError, conflictWithSuggestions, findConflicts, markClientVisited } from "./appointments";
 import { servicePrice } from "./catalog";
 import { assertBranchAccess, canSeeClinical, nextCounter, optText, recordBranchScope, requireClient, requireStaff, uuidOpt } from "./common";
 import { createReviewTx } from "./reviews";
@@ -80,7 +80,7 @@ const apptStatus = (s: SurgeryStatus) => (s === "CONFIRMED" ? "CONFIRMED" : s ==
 async function checkSlot(tx: Tx, tenantId: string, slot: { surgeonId: string; roomId: string | null; start: Date; end: Date; team: { userId: string }[] }, excludeAppointmentId?: string) {
   const main = { staffId: slot.surgeonId, roomId: slot.roomId, startsAt: slot.start, endsAt: slot.end };
   const clash = await findConflicts(tx, tenantId, main, excludeAppointmentId);
-  if (clash.length) throw conflictError(clash[0], main);
+  if (clash.length) throw await conflictWithSuggestions(tx, tenantId, clash[0], main, excludeAppointmentId);
   for (const m of slot.team) {
     const s = { staffId: m.userId, roomId: null, startsAt: slot.start, endsAt: slot.end };
     const c = await findConflicts(tx, tenantId, s, excludeAppointmentId);

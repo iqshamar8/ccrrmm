@@ -19,6 +19,7 @@ import { addUsage, validateSubscriptionBooking } from "./subscriptions";
 import { onAppointmentCreated } from "./messaging";
 import { consumeForAppointment } from "./inventory";
 
+const DAY_MS = 86_400_000;
 const ACTIVE: AppointmentStatus[] = ["SCHEDULED", "CONFIRMED", "CHECKED_IN", "COMPLETED"];
 
 export const createAppointmentSchema = z.object({
@@ -90,11 +91,76 @@ export async function findConflicts(tx: Tx, tenantId: string, s: Slot, excludeId
   });
 }
 
-export function conflictError(c: Awaited<ReturnType<typeof findConflicts>>[number], s: Slot) {
-  const who = c.staffId && c.staffId === s.staffId ? c.staff?.fullName : c.room?.name;
+export function conflictError(c: Awaited<ReturnType<typeof findConflicts>>[number], s: Slot, suggestions: string[] = []) {
+  const byStaff = !!(c.staffId && c.staffId === s.staffId);
+  const who = byStaff ? c.staff?.fullName : c.room?.name;
   return new AppError(409, "SLOT_CONFLICT", `Time slot conflicts with another booking for ${who ?? "this resource"} (${c.client.fullName})`, {
     conflictId: c.id, startsAt: c.startsAt, endsAt: c.endsAt,
+    who: who ?? null, whoKind: byStaff ? "staff" : "room", clientName: c.client.fullName,
+    suggestions,
   });
+}
+
+/**
+ * Nearest free start times for the same staff member / room and the same
+ * duration: 15-minute grid, closest first on the same day (07:00-22:00 in the
+ * clinic's timezone), then the next days. Never suggests a time in the past
+ * unless the request itself was in the past (recording an earlier visit).
+ */
+export async function suggestSlots(tx: Tx, tenantId: string, s: Slot, excludeId?: string, max = 4): Promise<string[]> {
+  if (!s.staffId && !s.roomId) return [];
+  const dur = +s.endsAt - +s.startsAt;
+  const step = 15 * 60000;
+  const tz = (await tx.tenant.findFirst({ where: { id: tenantId }, select: { timezone: true } }))?.timezone || "Asia/Baghdad";
+  const from = new Date(+s.startsAt - DAY_MS), to = new Date(+s.startsAt + 4 * DAY_MS);
+  const busy = await tx.appointment.findMany({
+    where: {
+      tenantId, status: { in: ACTIVE }, startsAt: { lt: to }, endsAt: { gt: from },
+      OR: [...(s.staffId ? [{ staffId: s.staffId }] : []), ...(s.roomId ? [{ roomId: s.roomId }] : [])],
+      ...(excludeId ? { id: { not: excludeId } } : {}),
+    },
+    select: { startsAt: true, endsAt: true },
+  });
+  let fmt: Intl.DateTimeFormat;
+  try { fmt = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }); }
+  catch { fmt = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Baghdad", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }); }
+  const local = (t: number) => {
+    const p = Object.fromEntries(fmt.formatToParts(new Date(t)).map((x) => [x.type, x.value]));
+    return { day: `${p.year}-${p.month}-${p.day}`, hour: Number(p.hour) + Number(p.minute) / 60 };
+  };
+  const now = Date.now();
+  const allowPast = +s.startsAt < now - 60 * 60000;
+  const free = (t: number) => {
+    if (!allowPast && t < now) return false;
+    const a = local(t), b = local(t + dur);
+    if (a.day !== b.day || a.hour < 7 || b.hour > 22) return false;
+    return !busy.some((x) => +x.startsAt < t + dur && +x.endsAt > t);
+  };
+  const base = Math.round(+s.startsAt / step) * step;
+  const sameDay = local(+s.startsAt).day;
+  // Same day: the closest free times before AND after the requested one,
+  // so the receptionist can offer "a bit earlier" or "a bit later".
+  const before: number[] = [], after: number[] = [];
+  for (let k = 1; k <= 64; k++) {
+    const a = base + k * step, b = base - k * step;
+    if (after.length < max && local(a).day === sameDay && free(a)) after.push(a);
+    if (before.length < max && local(b).day === sameDay && free(b)) before.push(b);
+  }
+  const half = Math.ceil(max / 2);
+  const out = [...after.slice(0, half), ...before.slice(0, half)];
+  for (const t of [...after.slice(half), ...before.slice(half)]) if (out.length < max) out.push(t);
+  // Not enough that day: the earliest free times on the next days.
+  for (let t = base + step; out.length < max && t < +to; t += step) {
+    if (local(t).day !== sameDay && free(t) && !out.includes(t)) out.push(t);
+  }
+  return out.slice(0, max).sort((a, b) => a - b).map((t) => new Date(t).toISOString());
+}
+
+/** conflictError plus the nearest free times, for booking forms. */
+export async function conflictWithSuggestions(tx: Tx, tenantId: string, c: Awaited<ReturnType<typeof findConflicts>>[number], s: Slot, excludeId?: string) {
+  let suggestions: string[] = [];
+  try { suggestions = await suggestSlots(tx, tenantId, s, excludeId); } catch { /* suggestions are a convenience */ }
+  return conflictError(c, s, suggestions);
 }
 
 async function validateResources(tx: Tx, tenantId: string, branchId: string, d: { serviceId?: string | null; staffId?: string | null; roomId?: string | null }) {
@@ -182,7 +248,7 @@ export async function createAppointment(ctx: Ctx, raw: unknown) {
       const startsAt = i === 0 ? d.startsAt : addInterval(d.startsAt, d.repeat!.frequency, i);
       const slot = { staffId: d.staffId, roomId: d.roomId, startsAt, endsAt: new Date(+startsAt + minutes * 60000) };
       const clash = await findConflicts(tx, tenantId, slot);
-      if (clash.length) throw conflictError(clash[0], slot);
+      if (clash.length) throw await conflictWithSuggestions(tx, tenantId, clash[0], slot);
       // Balance is re-checked per occurrence: earlier ones in this series are already reserved.
       if (d.programItemId && i > 0) await validateProgramBooking(tx, tenantId, d.clientId, d.programItemId, 1);
       if (d.subscriptionId) await validateSubscriptionBooking(tx, tenantId, d.clientId, d.subscriptionId, d.serviceId ?? null, slot.startsAt, 1);
@@ -232,7 +298,7 @@ export async function updateAppointment(ctx: Ctx, id: string, raw: unknown) {
       serviceId: d.serviceId !== undefined ? next.serviceId : undefined, staffId: next.staffId, roomId: next.roomId,
     });
     const clash = await findConflicts(tx, tenantId, next, id);
-    if (clash.length) throw conflictError(clash[0], next);
+    if (clash.length) throw await conflictWithSuggestions(tx, tenantId, clash[0], next, id);
     const price = next.serviceId && next.serviceId !== before.serviceId ? await servicePrice(tx, next.serviceId, before.branchId) : undefined;
     const after = await tx.appointment.update({ where: { id }, data: { ...next, ...(price !== undefined ? { price } : {}), ...(d.notes !== undefined ? { notes: d.notes } : {}) }, include });
     const rescheduled = +next.startsAt !== +before.startsAt;

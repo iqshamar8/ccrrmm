@@ -9,7 +9,7 @@ import { audit } from "../audit";
 import { type Ctx, requireTenant } from "../context";
 import { type Tx, withTenant } from "../db";
 import { badRequest, conflict, forbidden, notFound } from "../errors";
-import { conflictError, findConflicts, markClientVisited } from "./appointments";
+import { conflictError, conflictWithSuggestions, findConflicts, markClientVisited } from "./appointments";
 import { reviewCommission } from "./commissions";
 import { assertBranchAccess, canSeeClinical, optText, recordBranchScope, requireClient, requireStaff, uuidOpt } from "./common";
 
@@ -70,7 +70,7 @@ export async function createReviewTx(
     const slot = { staffId: d.doctorId, roomId: null, startsAt: start, endsAt: new Date(+start + d.durationMin * 60000) };
     const clash = await findConflicts(tx, tenantId, slot);
     if (!clash.length) break;
-    if (!d.skipConflicts || attempt >= 24) throw conflictError(clash[0], slot);
+    if (!d.skipConflicts || attempt >= 24) throw await conflictWithSuggestions(tx, tenantId, clash[0], slot);
     start = new Date(+start + 30 * 60000);
   }
   const appt = await tx.appointment.create({
@@ -147,7 +147,7 @@ export async function updateReview(ctx: Ctx, id: string, raw: unknown) {
     const end = new Date(+start + (d.durationMin ?? r.durationMin) * 60000);
     const slot = { staffId: doctorId, roomId: null, startsAt: start, endsAt: end };
     const clash = await findConflicts(tx, tenantId, slot, r.appointmentId ?? undefined);
-    if (clash.length) throw conflictError(clash[0], slot);
+    if (clash.length) throw await conflictWithSuggestions(tx, tenantId, clash[0], slot, r.appointmentId ?? undefined);
     if (r.appointmentId) await tx.appointment.update({ where: { id: r.appointmentId }, data: { staffId: doctorId, startsAt: start, endsAt: end, ...(d.reason ? { notes: d.reason } : {}) } });
     const after = await tx.medicalReview.update({ where: { id }, data: { ...d, doctorId, scheduledAt: start }, include });
     await audit(tx, ctx, { action: "review.update", entity: "MedicalReview", entityId: id, after: { changedFields: Object.keys(d), scheduledAt: start } });

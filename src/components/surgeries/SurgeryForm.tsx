@@ -5,7 +5,8 @@ import { useSession } from "@/components/providers";
 import { Button, Field, Input, Modal, Select } from "@/components/ui";
 import ClientPicker, { type PickedClient } from "@/components/clients/ClientPicker";
 import { type Catalog, type Room, type Staff, toDateInput } from "@/components/appointments/shared";
-import { api, ApiError } from "@/lib/client";
+import { api } from "@/lib/client";
+import { ConflictNotice, asSlotConflict, type SlotConflict } from "@/components/ConflictNotice";
 import { TEAM_ROLE } from "@/lib/labels3";
 export default function SurgeryForm({ open, surgery, onClose, onSaved }: {
   open: boolean; onClose: () => void; onSaved: (id: string) => void;
@@ -20,10 +21,11 @@ export default function SurgeryForm({ open, surgery, onClose, onSaved }: {
   const [f, setF] = useState({ serviceId: "", surgeryType: "", surgeonId: "", roomId: "", date: "", time: "07:00", durationMin: "120", price: "", anesthesiaType: "", preOpNotes: "", status: "PLANNED" });
   const [team, setTeam] = useState<{ userId: string; role: string }[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [conflict, setConflict] = useState<SlotConflict | null>(null);
   const { pending, run } = useSubmit();
   useEffect(() => {
     if (!open) return;
-    setError(null);
+    setError(null); setConflict(null);
     if (surgery) {
       const d = new Date(surgery.scheduledAt);
       setClient({ id: surgery.client.id, fullName: surgery.client.fullName });
@@ -42,7 +44,7 @@ export default function SurgeryForm({ open, surgery, onClose, onSaved }: {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
+    setError(null); setConflict(null);
     const scheduledAt = new Date(`${f.date}T${f.time}:00`);
     const body = edit
       ? { surgeryType: f.surgeryType, surgeonId: f.surgeonId, roomId: f.roomId || null, scheduledAt, durationMin: f.durationMin, price: f.price || 0, anesthesiaType: f.anesthesiaType, team }
@@ -53,7 +55,8 @@ export default function SurgeryForm({ open, surgery, onClose, onSaved }: {
       await run(async () => r, edit ? tr("تم تحديث العملية", "Surgery updated") : tr("تمت جدولة العملية", "Surgery scheduled"));
       onSaved(r.id);
     } catch (err) {
-      setError(err instanceof ApiError && err.code === "SLOT_CONFLICT" ? `${tr("تعارض في الموعد", "Time conflict")}: ${err.message}` : err instanceof Error ? err.message : String(err));
+      const c = asSlotConflict(err);
+      if (c) setConflict(c); else setError(err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -62,6 +65,12 @@ export default function SurgeryForm({ open, surgery, onClose, onSaved }: {
       footer={<><Button variant="secondary" onClick={onClose}>{tr("إلغاء", "Cancel")}</Button><Button form="surg" type="submit" loading={pending} disabled={!client || !f.surgeonId}>{tr("حفظ", "Save")}</Button></>}>
       <form id="surg" onSubmit={submit} className="grid gap-4 sm:grid-cols-3">
         {error && <p role="alert" className="sm:col-span-3 rounded-lg bg-red-500/10 px-3 py-2 text-sm text-danger">{error}</p>}
+        {conflict && <div className="sm:col-span-3"><ConflictNotice c={conflict} onPick={(iso) => {
+          const d = new Date(iso);
+          const pad = (n: number) => String(n).padStart(2, "0");
+          setF((x) => ({ ...x, date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, time: `${pad(d.getHours())}:${pad(d.getMinutes())}` }));
+          setConflict(null);
+        }} /></div>}
         <div className="sm:col-span-3"><span className="mb-1.5 block text-sm font-medium">{tr("المريض", "Patient")}</span><ClientPicker value={client} onChange={setClient} locked={edit} /></div>
         {!edit && (
           <Field label={tr("من خدمات العمليات", "From surgical services")}>

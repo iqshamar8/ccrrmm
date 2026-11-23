@@ -3,8 +3,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useResource } from "@/components/hooks";
 import { useSession, useToast } from "@/components/providers";
 import { Button, Field, Input, Modal, Select } from "@/components/ui";
-import { api, ApiError } from "@/lib/client";
-import { fmtDate } from "@/lib/i18n";
+import { api } from "@/lib/client";
+import { ConflictNotice, asSlotConflict, type SlotConflict } from "@/components/ConflictNotice";
 import { type Appt, type Catalog, fromInputs, type Room, type Service, type Staff, toDateInput, toTimeInput } from "./shared";
 
 export type BookingPreset = {
@@ -39,13 +39,14 @@ export default function AppointmentForm({ open, preset, appt, onClose, onSaved }
   const [f, setF] = useState({ branchId: "", serviceId: "", staffId: "", roomId: "", date: "", time: "", duration: 30, status: "SCHEDULED", bookingSource: "phone", notes: "", repeat: "", count: 4 });
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [conflict, setConflict] = useState<SlotConflict | null>(null);
   /** "" | "p:<programItemId>" | "s:<subscriptionId>" */
   const [charge, setCharge] = useState("");
   const coverage = useResource<Coverage>(open && !editing && client?.id ? `/api/clients/${client.id}/coverage` : null);
 
   useEffect(() => {
     if (!open) return;
-    setError(null); setSearch(""); setHits([]); setQuick(null);
+    setError(null); setConflict(null); setSearch(""); setHits([]); setQuick(null);
     if (appt) {
       const s = new Date(appt.startsAt);
       setClient({ id: appt.client.id, fullName: appt.client.fullName });
@@ -91,7 +92,7 @@ export default function AppointmentForm({ open, preset, appt, onClose, onSaved }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    setError(null); setPending(true);
+    setError(null); setConflict(null); setPending(true);
     try {
       let clientId = client?.id;
       if (!clientId && quick) {
@@ -117,10 +118,9 @@ export default function AppointmentForm({ open, preset, appt, onClose, onSaved }
       }
       onSaved();
     } catch (err) {
-      const msg = err instanceof ApiError && err.code === "SLOT_CONFLICT"
-        ? `${tr("تعارض في الموعد", "Time conflict")}: ${err.message}${err.details?.startsAt ? ` (${fmtDate(String(err.details.startsAt), locale, true)})` : ""}`
-        : err instanceof Error ? err.message : String(err);
-      setError(msg);
+      const c = asSlotConflict(err);
+      if (c) setConflict(c);
+      else setError(err instanceof Error ? err.message : String(err));
     } finally { setPending(false); }
   }
 
@@ -135,6 +135,12 @@ export default function AppointmentForm({ open, preset, appt, onClose, onSaved }
       footer={<><Button variant="secondary" onClick={onClose}>{tr("إلغاء", "Cancel")}</Button><Button form="appt-form" type="submit" loading={pending}>{editing ? tr("حفظ", "Save") : tr("حجز", "Book")}</Button></>}>
       <form id="appt-form" onSubmit={submit} className="grid gap-4 sm:grid-cols-3">
         {error && <p role="alert" className="sm:col-span-3 rounded-lg bg-red-500/10 px-3 py-2 text-sm text-danger">{error}</p>}
+        {conflict && <div className="sm:col-span-3"><ConflictNotice c={conflict} onPick={(iso) => {
+          const d = new Date(iso);
+          setF((x) => ({ ...x, date: toDateInput(d), time: toTimeInput(d) }));
+          setConflict(null);
+          toast("success", tr("تم اختيار الوقت، اضغط «حجز» للتأكيد", "Time selected, press Book to confirm"));
+        }} /></div>}
 
         <div className="sm:col-span-3">
           <span className="mb-1.5 block text-sm font-medium">{tr("العميل", "Client")}</span>
