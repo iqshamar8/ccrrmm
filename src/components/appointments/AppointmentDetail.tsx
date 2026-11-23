@@ -34,6 +34,8 @@ export default function AppointmentDetail({ appt, onClose, onChanged, onEdit }: 
   // Surgery / review slots are managed from their own pages.
   const managed = !!(appt.surgery || appt.review);
   const canUpdate = can("appointments.update") && !managed;
+  // Check-in only (nurses): the one action they may take on a booking.
+  const canCheckIn = !canUpdate && can("appointments.checkin") && !managed && NEXT[appt.status].includes("CHECKED_IN");
 
   const setStatus = async (status: string, why?: string) => {
     const ok = await run(() => api(`/api/appointments/${appt.id}/status`, { body: { status, reason: why } }), tr("تم تحديث حالة الموعد", "Status updated"));
@@ -53,6 +55,10 @@ export default function AppointmentDetail({ appt, onClose, onChanged, onEdit }: 
               <Button key={s} variant={s === "NO_SHOW" ? "secondary" : "primary"} loading={pending} onClick={() => setStatus(s)}>{tr(...ACTION_LABEL[s])}</Button>
             ))}
           </div>
+        </div>
+      ) : canCheckIn ? (
+        <div className="flex w-full justify-end">
+          <Button loading={pending} onClick={() => setStatus("CHECKED_IN")}>{tr(...ACTION_LABEL.CHECKED_IN)}</Button>
         </div>
       ) : undefined}>
       <div className="space-y-4 text-sm">

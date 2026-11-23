@@ -33,7 +33,8 @@ export const MODULES: readonly ModuleDef[] = [
     extra: [{ key: "clients.merge", ar: "دمج الملفات المكررة", en: "Merge duplicates" }] },
   { key: "medical", ar: "الملف الطبي", en: "Medical records", actions: ["view", "create", "update", "delete", "print"], phase: 2,
     extra: [{ key: "medical.view_data", ar: "مشاهدة البيانات الطبية", en: "View medical data" }] },
-  { key: "appointments", ar: "المواعيد", en: "Appointments", actions: CRUDX, phase: 2 },
+  { key: "appointments", ar: "المواعيد", en: "Appointments", actions: CRUDX, phase: 2,
+    extra: [{ key: "appointments.checkin", ar: "تسجيل حضور المريض", en: "Check patients in" }] },
   { key: "services", ar: "الخدمات", en: "Services", actions: CRUDX, phase: 2 },
   { key: "programs", ar: "البرامج العلاجية", en: "Treatment programs", actions: CRUDX, phase: 3 },
   { key: "subscriptions", ar: "اشتراكات العملاء", en: "Client subscriptions", actions: CRUDX, phase: 3 },
@@ -140,6 +141,7 @@ export const DEFAULT_ROLES: DefaultRole[] = [
     key: "nurse", name: "Nurse", nameAr: "الممرض",
     permissions: [
       ...perms(["dashboard", "clients", "appointments", "services", "surgeries", "reviews", "programs"], ["view"]),
+      "appointments.checkin", // receives the patient at the door; can't reschedule or cancel
       "medical.view", "medical.create", "medical.update", "medical.view_data", "inventory.view",
     ],
   },

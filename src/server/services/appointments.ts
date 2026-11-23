@@ -11,7 +11,7 @@ import { Prisma, type AppointmentStatus } from "@prisma/client";
 import { audit } from "../audit";
 import { type Ctx, requireTenant } from "../context";
 import { type Tx, withTenant } from "../db";
-import { AppError, badRequest, conflict, notFound } from "../errors";
+import { AppError, badRequest, conflict, forbidden, notFound } from "../errors";
 import { assertBranchAccess, optText, recordBranchScope, uuidOpt } from "./common";
 import { servicePrice } from "./catalog";
 import { addSession, validateProgramBooking } from "./programs";
@@ -329,8 +329,10 @@ async function assertNotManaged(tx: Tx, id: string) {
 }
 
 export async function setAppointmentStatus(ctx: Ctx, id: string, raw: unknown) {
-  const tenantId = requireTenant(ctx, "appointments.update");
+  const tenantId = requireTenant(ctx);
   const { status, reason } = statusSchema.parse(raw);
+  // Full editors change any status; "appointments.checkin" (e.g. nurses) may only check a patient in.
+  if (!ctx.permissions.has("appointments.update") && !(status === "CHECKED_IN" && ctx.permissions.has("appointments.checkin"))) throw forbidden();
   return withTenant(tenantId, async (tx) => {
     const before = await tx.appointment.findFirst({ where: { id, tenantId, ...recordBranchScope(ctx) }, include: { service: true } });
     if (!before) throw notFound("Appointment not found");
