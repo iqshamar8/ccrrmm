@@ -8,6 +8,7 @@ import { useSession } from "./providers";
 import NotificationBell from "./NotificationBell";
 import ClockButton from "./ClockButton";
 import LiveClock from "./LiveClock";
+import MedcrmMark from "./MedcrmMark";
 
 type NavItem = { href: string; ar: string; en: string; icon: string; show: boolean };
 
@@ -157,7 +158,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
         {s.tenant?.logoUrl
           // eslint-disable-next-line @next/next/no-img-element
           ? <img src={s.tenant.logoUrl} alt="" className="brand-mark size-9 rounded-lg object-cover" />
-          : <span className="brand-mark grid size-9 shrink-0 place-items-center rounded-lg bg-brand font-semibold text-white">{(s.tenant?.name ?? "M").slice(0, 1)}</span>}
+          : s.tenant
+            ? <span className="brand-mark grid size-9 shrink-0 place-items-center rounded-lg bg-brand font-semibold text-white">{s.tenant.name.slice(0, 1)}</span>
+            : <MedcrmMark className="medcrm-mark size-9 shrink-0" title="MedCRM" />}
         {!collapsed && (
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold">{s.tenant?.name ?? "MedCRM"}</p>

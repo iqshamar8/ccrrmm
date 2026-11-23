@@ -110,6 +110,11 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
 .nav-link:hover svg { transform: scale(1.12); }
 .brand-mark { box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 18%, transparent); transition: transform 0.3s var(--ease-spring); }
 .brand-mark:hover { transform: rotate(-6deg) scale(1.05); }
+/* MedCRM mark: two-colour on light, all-lime on dark (the brand's own variants) */
+:root { --mark-side: #e1ea75; --mark-core: #063531; }
+.dark { --mark-core: #e1ea75; }
+.medcrm-mark { transition: transform 0.3s var(--ease-spring); }
+.medcrm-mark:hover { transform: translateY(-2px) scale(1.05); }
 .sidebar-head { background: linear-gradient(180deg, color-mix(in srgb, var(--brand) 10%, transparent), color-mix(in srgb, var(--accent) 6%, transparent) 70%, transparent); }
 
 /* Top bar gains a soft edge once the page scrolls under it. */

@@ -26,6 +26,8 @@
   --lp-light-opacity: 1;
   --lp-focus: var(--lp-lime);
   --lp-lime: #dcf36b;
+  --mark-side: #e1ea75;
+  --mark-core: #e1ea75;
   --lp-lime-hi: #ecfba0;
   --lp-lime-ink: #0b2a26;
   --lp-glow-a: #1fb89a;
@@ -87,7 +89,9 @@
   transition: background 0.3s var(--ease-out); }
 .lp-nav__bar[data-scrolled="true"] { background: var(--lp-glass-scrolled); }
 .lp-brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 20px; letter-spacing: -0.01em; }
-.lp-brand__mark { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: var(--lp-lime); color: var(--lp-lime-ink); font-size: 18px; }
+.lp-brand__mark { width: 34px; height: 34px; flex-shrink: 0; filter: drop-shadow(0 0 10px rgb(225 234 117 / 0.35)); transition: transform 0.4s cubic-bezier(.34,1.56,.64,1); }
+.lp-brand:hover .lp-brand__mark { transform: translateY(-2px) scale(1.05); }
+.lp[data-theme="light"] .lp-brand__mark { filter: none; }
 .lp-nav__links { display: none; margin-inline: auto; gap: 30px; font-size: 15px; color: var(--lp-soft); }
 .lp-nav__links a { transition: color 0.2s; }
 .lp-nav__links a:hover { color: var(--lp-ink); }
@@ -380,6 +384,8 @@
   --lp-soft: rgb(6 48 43 / 0.74);
   --lp-faint: rgb(6 48 43 / 0.12);
   --lp-lime: #d6f25c;
+  --mark-side: #e1ea75;
+  --mark-core: #063531;
   --lp-lime-hi: #e4f88a;
   --lp-glow-a: #7fdcc4;
   --lp-glow-b: #9fe3cf;

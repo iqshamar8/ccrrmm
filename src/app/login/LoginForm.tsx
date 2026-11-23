@@ -6,6 +6,7 @@ import { type Locale, makeTr } from "@/lib/i18n";
 import { Effects, LangToggle, ThemeToggle, type LpTheme } from "../welcome/Effects";
 import { ClientFile } from "../welcome/fragments";
 import "../welcome/landing.css";
+import MedcrmMark from "@/components/MedcrmMark";
 
 export default function LoginForm({ locale, theme }: { locale: Locale; theme: LpTheme }) {
   const tr = makeTr(locale);
@@ -55,7 +56,7 @@ export default function LoginForm({ locale, theme }: { locale: Locale; theme: Lp
       <header className="lp-nav lp-wrap">
         <div className="lp-nav__bar">
           <Link href="/" className="lp-brand" aria-label={tr("MedCRM، الصفحة الرئيسية", "MedCRM, home")}>
-            <span className="lp-brand__mark" aria-hidden="true">M</span>MedCRM
+            <MedcrmMark className="lp-brand__mark" />MedCRM
           </Link>
           <div className="lp-nav__end">
             <ThemeToggle initial={theme} locale={locale} />

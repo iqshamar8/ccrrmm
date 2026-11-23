@@ -6,6 +6,7 @@ import { Effects, LangToggle, ThemeToggle, type LpTheme } from "./Effects";
 import { PlanPicker } from "./PlanPicker";
 import { ClientFile, DayCalendar, Invoice, Today } from "./fragments";
 import "./landing.css";
+import MedcrmMark from "@/components/MedcrmMark";
 
 export const metadata: Metadata = {
   title: "MedCRM | نظام إدارة العيادات والمراكز الطبية",
@@ -44,7 +45,7 @@ export default async function Landing() {
       <header className="lp-nav lp-wrap">
         <div className="lp-nav__bar">
           <Link href="/" className="lp-brand" aria-label="MedCRM">
-            <span className="lp-brand__mark" aria-hidden="true">M</span>MedCRM
+            <MedcrmMark className="lp-brand__mark" />MedCRM
           </Link>
           <nav className="lp-nav__links" aria-label={tr("أقسام الصفحة", "Page sections")}>
             <a href="#flow">{tr("كيف يعمل", "How it works")}</a>
