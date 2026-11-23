@@ -7,6 +7,7 @@ import { fmtDate } from "@/lib/i18n";
 import { useSession } from "./providers";
 import NotificationBell from "./NotificationBell";
 import ClockButton from "./ClockButton";
+import LiveClock from "./LiveClock";
 
 type NavItem = { href: string; ar: string; en: string; icon: string; show: boolean };
 
@@ -211,14 +212,15 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header data-scrolled={scrolled} className="app-topbar sticky top-0 z-40 flex h-16 items-center gap-2 border-b border-line bg-surface/90 px-4 backdrop-blur print:hidden">
-          <button className="rounded-lg p-2 hover:bg-surface-2 lg:hidden" onClick={() => setMobileOpen(true)} aria-label="menu">
+          <button className="rounded-lg p-2 hover:bg-surface-2 lg:hidden" onClick={() => setMobileOpen(true)} aria-label={tr("القائمة", "Menu")}>
             <Icon d="M4 6h16M4 12h16M4 18h16" />
           </button>
+          <LiveClock />
           <div className="flex-1" />
           <ClockButton />
           <NotificationBell />
           <button onClick={toggleLocale} className="rounded-lg px-3 py-2 text-sm hover:bg-surface-2">{locale === "ar" ? "EN" : "ع"}</button>
-          <button onClick={toggleTheme} className="rounded-lg p-2 hover:bg-surface-2" aria-label="theme">
+          <button onClick={toggleTheme} className="rounded-lg p-2 hover:bg-surface-2" aria-label={dark ? tr("الوضع النهاري", "Day mode") : tr("الوضع الليلي", "Night mode")}>
             <Icon d={dark ? "M12 3v2M12 19v2M5 5l1.5 1.5M17.5 17.5L19 19M3 12h2M19 12h2M5 19l1.5-1.5M17.5 6.5L19 5M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8" : "M21 13A9 9 0 1 1 11 3a7 7 0 0 0 10 10z"} />
           </button>
           <details className="relative">

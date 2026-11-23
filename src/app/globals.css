@@ -191,6 +191,26 @@ tbody tr { transition: background-color 0.15s; }
 .dark .text-brand { color: color-mix(in srgb, var(--brand) 55%, #ffffff); }
 .dark .nav-link[aria-current="page"]::before { background: color-mix(in srgb, var(--brand) 55%, #ffffff); }
 
+/* Suggested free times after a booking conflict. */
+.slot-chip { border: 1px solid color-mix(in srgb, var(--brand) 35%, transparent); background: var(--surface); color: var(--brand);
+  transition: background-color 0.15s, color 0.15s, transform 0.15s var(--ease-out); animation: app-pop 0.3s var(--ease-out) both; }
+.dark .slot-chip { color: color-mix(in srgb, var(--brand) 55%, #ffffff); }
+.slot-chip:hover, .slot-chip:focus-visible { background: var(--brand); color: var(--brand-ink); }
+.slot-chip:active { transform: scale(0.96); }
+.slot-chip:nth-child(2) { animation-delay: 50ms; } .slot-chip:nth-child(3) { animation-delay: 100ms; } .slot-chip:nth-child(4) { animation-delay: 150ms; }
+
+/* Live clock in the top bar. */
+.live-clock { display: inline-flex; align-items: baseline; gap: 6px; min-width: 64px; padding: 6px 12px; border-radius: 12px;
+  background: color-mix(in srgb, var(--brand) 8%, transparent); color: var(--text); animation: app-fade 0.4s ease both; }
+.live-clock__time { font-size: 17px; font-weight: 700; letter-spacing: 0.02em; }
+.live-clock__colon { display: inline-block; margin-inline: 1px; animation: clock-blink 1s steps(1) infinite; }
+@keyframes clock-blink { 50% { opacity: 0.25; } }
+.live-clock__ampm { font-size: 11px; font-weight: 600; color: var(--muted); }
+.live-clock__date { display: none; font-size: 12px; color: var(--muted); padding-inline-start: 8px; margin-inline-start: 2px;
+  border-inline-start: 1px solid var(--border); }
+@media (min-width: 900px) { .live-clock__date { display: inline; } }
+@media (max-width: 380px) { .live-clock { padding: 4px 8px; } .live-clock__ampm { display: none; } }
+
 /* Avatar in the top bar wears the accent colour. */
 .avatar-accent { background: var(--accent); color: var(--accent-ink); }
 

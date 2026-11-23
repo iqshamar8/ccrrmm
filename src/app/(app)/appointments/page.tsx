@@ -82,9 +82,9 @@ export default function AppointmentsPage() {
 
       <Card className="mb-3 flex flex-wrap items-center gap-2 p-3">
         <div className="flex items-center gap-1">
-          <Button size="sm" variant="secondary" onClick={() => move(-1)} aria-label="previous"><span className="rtl:rotate-180">‹</span></Button>
+          <Button size="sm" variant="secondary" onClick={() => move(-1)} aria-label={tr("السابق", "Previous")}><span className="rtl:rotate-180">‹</span></Button>
           <Button size="sm" variant="secondary" onClick={() => setCursor(startOfDay(new Date()))}>{tr("اليوم", "Today")}</Button>
-          <Button size="sm" variant="secondary" onClick={() => move(1)} aria-label="next"><span className="rtl:rotate-180">›</span></Button>
+          <Button size="sm" variant="secondary" onClick={() => move(1)} aria-label={tr("التالي", "Next")}><span className="rtl:rotate-180">›</span></Button>
         </div>
         <input type="date" className="h-8 rounded-lg border border-line bg-surface px-2 text-xs" dir="ltr"
           value={`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}-${String(cursor.getDate()).padStart(2, "0")}`}
@@ -192,7 +192,7 @@ function TimeGrid({ days, columns, resource, appts, onSlot, onPick }: {
                   {hours.map((h) => (
                     <div key={h} className="border-b border-line/60" style={{ height: HOUR_PX }}>
                       {[0, 15, 30, 45].map((m) => (
-                        <button key={m} aria-label={`${h}:${m}`} disabled={!onSlot}
+                        <button key={m} aria-label={`${h}:${String(m).padStart(2, "0")}`} disabled={!onSlot}
                           onClick={() => { const d = new Date(c.day); d.setHours(h, m, 0, 0); onSlot?.(d, c.colId); }}
                           className="block w-full hover:bg-brand/5 disabled:cursor-default" style={{ height: HOUR_PX / 4 }} />
                       ))}

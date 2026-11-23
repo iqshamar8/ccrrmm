@@ -187,7 +187,7 @@ export function Modal({ open, onClose, title, children, footer, wide }: {
         <div className="flex max-h-[85vh] flex-col">
           <div className="flex items-center justify-between border-b border-line px-5 py-4">
             <h2 className="font-semibold">{title}</h2>
-            <button onClick={onClose} className="rounded-md p-1 text-muted hover:bg-surface-2" aria-label="close">
+            <button onClick={onClose} className="rounded-md p-1 text-muted hover:bg-surface-2" aria-label={typeof document !== "undefined" && document.documentElement.dir === "rtl" ? "إغلاق" : "Close"}>
               <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 6l12 12M18 6L6 18" /></svg>
             </button>
           </div>
