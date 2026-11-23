@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { isLocale, makeTr, type Locale } from "@/lib/i18n";
-import { Effects, LangToggle } from "./Effects";
+import { Effects, LangToggle, ThemeToggle, type LpTheme } from "./Effects";
 import { PlanPicker } from "./PlanPicker";
 import { ClientFile, DayCalendar, Invoice, Today } from "./fragments";
 import "./landing.css";
@@ -20,12 +20,15 @@ const Arrow = () => (
 );
 
 export default async function Landing() {
-  const l = (await cookies()).get("locale")?.value;
+  const jar = await cookies();
+  const l = jar.get("locale")?.value;
   const locale: Locale = isLocale(l) ? l : "ar";
+  // Night by default; day only when the visitor chose it (shared "theme" cookie).
+  const theme: LpTheme = jar.get("theme")?.value === "light" ? "light" : "dark";
   const tr = makeTr(locale);
 
   return (
-    <div className="lp" dir={locale === "ar" ? "rtl" : "ltr"} lang={locale}>
+    <div className="lp" data-theme={theme} dir={locale === "ar" ? "rtl" : "ltr"} lang={locale}>
       <Effects />
       <div className="lp-lights" aria-hidden="true">
         <div className="lp-beam" />
@@ -50,6 +53,7 @@ export default async function Landing() {
             <a href="#pricing">{tr("الأسعار", "Pricing")}</a>
           </nav>
           <div className="lp-nav__end">
+            <ThemeToggle initial={theme} locale={locale} />
             <LangToggle locale={locale} />
             <Link href="/login" className="lp-btn lp-btn--lime lp-btn--sm">{tr("تسجيل الدخول", "Sign in")}<Arrow /></Link>
           </div>

@@ -3,11 +3,11 @@ import { useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/client";
 import { type Locale, makeTr } from "@/lib/i18n";
-import { Effects, LangToggle } from "../welcome/Effects";
+import { Effects, LangToggle, ThemeToggle, type LpTheme } from "../welcome/Effects";
 import { ClientFile } from "../welcome/fragments";
 import "../welcome/landing.css";
 
-export default function LoginForm({ locale }: { locale: Locale }) {
+export default function LoginForm({ locale, theme }: { locale: Locale; theme: LpTheme }) {
   const tr = makeTr(locale);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -41,7 +41,7 @@ export default function LoginForm({ locale }: { locale: Locale }) {
   }
 
   return (
-    <div className="lp lg" dir={locale === "ar" ? "rtl" : "ltr"} lang={locale}>
+    <div className="lp lg" data-theme={theme} dir={locale === "ar" ? "rtl" : "ltr"} lang={locale}>
       <Effects />
       <div className="lp-lights" aria-hidden="true">
         <div className="lp-beam" />
@@ -58,6 +58,7 @@ export default function LoginForm({ locale }: { locale: Locale }) {
             <span className="lp-brand__mark" aria-hidden="true">M</span>MedCRM
           </Link>
           <div className="lp-nav__end">
+            <ThemeToggle initial={theme} locale={locale} />
             <LangToggle locale={locale} />
           </div>
         </div>

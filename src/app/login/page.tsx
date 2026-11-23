@@ -3,6 +3,7 @@ import { isLocale } from "@/lib/i18n";
 import LoginForm from "./LoginForm";
 
 export default async function LoginPage() {
-  const l = (await cookies()).get("locale")?.value;
-  return <LoginForm locale={isLocale(l) ? l : "ar"} />;
+  const jar = await cookies();
+  const l = jar.get("locale")?.value;
+  return <LoginForm locale={isLocale(l) ? l : "ar"} theme={jar.get("theme")?.value === "light" ? "light" : "dark"} />;
 }
