@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { api, setPref } from "@/lib/client";
+import { setPref } from "@/lib/client";
 import { fmtDate } from "@/lib/i18n";
 import { useSession } from "./providers";
 import NotificationBell from "./NotificationBell";
@@ -142,10 +142,13 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     setPref("locale", locale === "ar" ? "en" : "ar");
     window.location.reload();
   };
-  const logout = async () => {
-    await api("/api/auth/logout", { body: {} });
-    window.location.href = "/login";
-  };
+  // Sign-out is a real form post: the server clears the cookie and redirects,
+  // which works on every phone browser (no reliance on fetch + JS redirect).
+  const signOut = (className: string, label: React.ReactNode) => (
+    <form method="post" action="/api/auth/logout">
+      <button type="submit" className={className}>{label}</button>
+    </form>
+  );
 
   const sidebar = (
     <nav className="flex h-full flex-col">
@@ -178,6 +181,11 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             </div>
           );
         })}
+      </div>
+      {/* Phones: a clear sign-out at the bottom of the menu */}
+      <div className="border-t border-line p-3 lg:hidden">
+        {signOut("flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-danger hover:bg-red-500/10",
+          <><Icon d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l5-5-5-5M15 12H4" className="size-5 rtl:rotate-180" />{tr("تسجيل الخروج", "Sign out")}</>)}
       </div>
       <button onClick={toggleCollapse} className="hidden lg:flex items-center gap-3 border-t border-line px-6 py-3 text-xs text-muted hover:text-ink">
         <Icon d={collapsed ? "M9 6l6 6-6 6" : "M15 6l-6 6 6 6"} className="size-4 rtl:rotate-180" />
@@ -215,7 +223,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           </button>
           <details className="relative">
             <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-surface-2">
-              <span className="grid size-8 place-items-center rounded-full bg-surface-2 text-sm font-medium">{s.user.fullName.slice(0, 1)}</span>
+              <span className="avatar-accent grid size-8 place-items-center rounded-full text-sm font-semibold">{s.user.fullName.slice(0, 1)}</span>
               <span className="hidden text-start sm:block">
                 <span className="block text-sm leading-tight">{s.user.fullName}</span>
                 <span className="block text-xs text-muted leading-tight">{s.user.roleName ?? tr("مالك المنصة", "Platform owner")}</span>
@@ -224,7 +232,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             <div className="menu-pop absolute end-0 mt-2 w-56 rounded-xl border border-line bg-surface p-1 shadow-lg">
               <p className="truncate px-3 py-2 text-xs text-muted" dir="ltr">{s.user.email}</p>
               <Link href="/account" className="block rounded-lg px-3 py-2 text-sm hover:bg-surface-2">{tr("حسابي وكلمة المرور", "My account")}</Link>
-              <button onClick={logout} className="block w-full rounded-lg px-3 py-2 text-start text-sm text-danger hover:bg-surface-2">{tr("تسجيل الخروج", "Sign out")}</button>
+              {signOut("block w-full rounded-lg px-3 py-2 text-start text-sm text-danger hover:bg-surface-2", tr("تسجيل الخروج", "Sign out"))}
             </div>
           </details>
         </header>
