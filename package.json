@@ -15,7 +15,8 @@
     "db:reset": "tsx scripts/db-setup.ts --reset && tsx prisma/seed.ts",
     "test": "tsx scripts/db-setup.ts --test && vitest run",
     "test:reset": "tsx scripts/db-setup.ts --test --reset",
-    "test:sim": "tsx scripts/db-setup.ts --test && vitest run tests/simulation.test.ts"
+    "test:sim": "tsx scripts/db-setup.ts --test && vitest run tests/simulation.test.ts",
+    "test:sim3w": "tsx scripts/db-setup.ts --test && vitest run tests/simulation3w.test.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.16.0",
